@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  KUBESEAL_VERSION: 0.32.2
+  KUBESEAL_VERSION: 0.40.0
 
 jobs:
   test:
