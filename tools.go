@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -34,11 +33,9 @@ func (t target) validate() error {
 }
 
 type sealedOutput struct {
-	Manifest string   `json:"manifest" jsonschema:"SealedSecret YAML, safe to commit"`
-	SHA256   string   `json:"sha256" jsonschema:"SHA-256 of manifest; verify the committed file matches"`
-	File     string   `json:"file" jsonschema:"conventional file name"`
-	Keys     []string `json:"keys" jsonschema:"data keys contained in the Secret (values are never returned)"`
-	Notes    []string `json:"notes,omitempty"`
+	SealedSecret *sealedSecret `json:"sealedSecret" jsonschema:"the SealedSecret resource; commit it unchanged (as YAML or JSON) and copy encryptedData values exactly"`
+	File         string        `json:"file" jsonschema:"conventional file name"`
+	Notes        []string      `json:"notes,omitempty" jsonschema:"actions required before or after committing"`
 }
 
 type keySpec struct {
@@ -64,7 +61,7 @@ func (t *tools) register(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "generate_sealed_secret",
 		Description: "Create a new credential: generate random values server-side and return them only as a " +
-			"strict-scope SealedSecret manifest. Refuses if the Secret already exists in the cluster, so an " +
+			"strict-scope SealedSecret resource (JSON). Refuses if the Secret already exists in the cluster, so an " +
 			"existing credential is never rotated by accident. Nothing is written to the cluster.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, t.generate)
@@ -153,17 +150,11 @@ func (t *tools) seal(ctx context.Context, s secretSpec) (sealedOutput, error) {
 	if err != nil {
 		return sealedOutput{}, err
 	}
-	manifest, err := sealStrict(pub, s)
+	sealed, err := sealStrict(pub, s)
 	if err != nil {
 		return sealedOutput{}, err
 	}
-	sum := sha256.Sum256([]byte(manifest))
-	return sealedOutput{
-		Manifest: manifest,
-		SHA256:   hex.EncodeToString(sum[:]),
-		File:     s.Name + ".sealed.yaml",
-		Keys:     sortedKeys(s.Data),
-	}, nil
+	return sealedOutput{SealedSecret: sealed, File: s.Name + ".sealed.yaml"}, nil
 }
 
 // secretKey is the Kubernetes rule for Secret data keys.

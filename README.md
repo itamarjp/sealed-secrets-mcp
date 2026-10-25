@@ -4,8 +4,8 @@ An [MCP](https://modelcontextprotocol.io) server that lets AI agents (Claude, Co
 turn Kubernetes Secrets into [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets)
 manifests **without ever seeing a plaintext value**.
 
-The agent asks for a Secret, gets back a strict-scope `SealedSecret` YAML, commits it, and opens
-the pull request. Your GitOps tool (Argo CD, Flux) applies it as usual.
+The agent asks for a Secret, gets back a strict-scope `SealedSecret` resource as JSON, commits it
+(as YAML or JSON), and opens the pull request. Your GitOps tool (Argo CD, Flux) applies it as usual.
 
 ## Security model
 
@@ -31,9 +31,27 @@ compatibility.
 | `seal_existing_secret` | Reads a live Secret and returns it sealed, with the same values. Use it to move a manually created Secret into Git. |
 | `generate_sealed_secret` | Generates random values (`hex`, `base64url` or `alnum`) for the requested keys and returns them sealed. Fails if the Secret exists. |
 
-Both return `manifest`, its `sha256` (so the agent can check the committed file is intact),
-a suggested `file` name, the `keys`, and `notes` such as the
-`sealedsecrets.bitnami.com/managed=true` annotation needed to adopt an existing Secret.
+Both return the `SealedSecret` resource as JSON, ready to save as YAML or JSON, plus a suggested
+`file` name and `notes`. A note asks for the `sealedsecrets.bitnami.com/managed=true` annotation
+when an existing Secret has to be adopted by the controller. Example:
+
+```json
+{
+  "sealedSecret": {
+    "apiVersion": "bitnami.com/v1alpha1",
+    "kind": "SealedSecret",
+    "metadata": { "name": "db", "namespace": "apps" },
+    "spec": {
+      "encryptedData": { "PASSWORD": "AgBy3i4OJSWK…" },
+      "template": { "metadata": { "name": "db", "namespace": "apps" }, "type": "Opaque" }
+    }
+  },
+  "file": "db.sealed.yaml"
+}
+```
+
+If a ciphertext is damaged while copying, nothing leaks: the controller refuses to decrypt it and
+reports the error on the SealedSecret.
 
 ## Configuration
 

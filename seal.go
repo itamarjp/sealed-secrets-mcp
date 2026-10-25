@@ -9,13 +9,10 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
-	"sort"
-	"strings"
 )
 
 // hybridEncrypt reproduces the ciphertext format used by Sealed Secrets
@@ -75,69 +72,43 @@ type secretSpec struct {
 	Data        map[string][]byte
 }
 
-// sealStrict encrypts every value with strict scope (label "namespace/name")
-// and renders the SealedSecret manifest as YAML.
-func sealStrict(pub *rsa.PublicKey, s secretSpec) (string, error) {
+// sealedSecret is a bitnami.com/v1alpha1 SealedSecret. It is returned as
+// JSON so clients can commit it in whatever format their repository uses.
+type sealedSecret struct {
+	APIVersion string     `json:"apiVersion"`
+	Kind       string     `json:"kind"`
+	Metadata   objectMeta `json:"metadata"`
+	Spec       struct {
+		EncryptedData map[string]string `json:"encryptedData"`
+		Template      struct {
+			Metadata objectMeta `json:"metadata"`
+			Type     string     `json:"type,omitempty"`
+		} `json:"template"`
+	} `json:"spec"`
+}
+
+type objectMeta struct {
+	Name        string            `json:"name"`
+	Namespace   string            `json:"namespace"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// sealStrict encrypts every value with strict scope (label "namespace/name").
+func sealStrict(pub *rsa.PublicKey, s secretSpec) (*sealedSecret, error) {
 	label := []byte(s.Namespace + "/" + s.Name)
-	enc := make(map[string]string, len(s.Data))
+	out := &sealedSecret{APIVersion: "bitnami.com/v1alpha1", Kind: "SealedSecret",
+		Metadata: objectMeta{Name: s.Name, Namespace: s.Namespace}}
+	out.Spec.EncryptedData = make(map[string]string, len(s.Data))
 	for k, v := range s.Data {
 		ct, err := hybridEncrypt(rand.Reader, pub, v, label)
 		if err != nil {
-			return "", fmt.Errorf("encrypt %q: %w", k, err)
+			return nil, fmt.Errorf("encrypt %q: %w", k, err)
 		}
-		enc[k] = base64.StdEncoding.EncodeToString(ct)
+		out.Spec.EncryptedData[k] = base64.StdEncoding.EncodeToString(ct)
 	}
-
-	var b strings.Builder
-	w := func(indent int, format string, a ...any) {
-		b.WriteString(strings.Repeat("  ", indent))
-		fmt.Fprintf(&b, format, a...)
-		b.WriteByte('\n')
-	}
-	w(0, "apiVersion: bitnami.com/v1alpha1")
-	w(0, "kind: SealedSecret")
-	w(0, "metadata:")
-	w(1, "name: %s", s.Name)
-	w(1, "namespace: %s", s.Namespace)
-	w(0, "spec:")
-	w(1, "encryptedData:")
-	for _, k := range sortedKeys(enc) {
-		w(2, "%s: %s", quote(k), enc[k])
-	}
-	w(1, "template:")
-	w(2, "metadata:")
-	w(3, "name: %s", s.Name)
-	w(3, "namespace: %s", s.Namespace)
-	for _, m := range []struct {
-		field string
-		kv    map[string]string
-	}{{"labels", s.Labels}, {"annotations", s.Annotations}} {
-		if len(m.kv) == 0 {
-			continue
-		}
-		w(3, "%s:", m.field)
-		for _, k := range sortedKeys(m.kv) {
-			w(4, "%s: %s", quote(k), quote(m.kv[k]))
-		}
-	}
-	if s.Type != "" {
-		w(2, "type: %s", quote(s.Type))
-	}
-	return b.String(), nil
-}
-
-// quote renders a string as a YAML double-quoted scalar. JSON string
-// escaping is a subset of YAML's, so the output is always valid YAML.
-func quote(s string) string {
-	q, _ := json.Marshal(s)
-	return string(q)
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	out.Spec.Template.Metadata = objectMeta{Name: s.Name, Namespace: s.Namespace,
+		Labels: s.Labels, Annotations: s.Annotations}
+	out.Spec.Template.Type = s.Type
+	return out, nil
 }

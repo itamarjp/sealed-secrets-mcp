@@ -11,13 +11,13 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +56,7 @@ func TestSealStrictRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	y, err := sealStrict(pub, secretSpec{
+	ss, err := sealStrict(pub, secretSpec{
 		Namespace: "apps", Name: "db", Type: "Opaque",
 		Labels: map[string]string{"app": "db"},
 		Data:   map[string][]byte{"PASSWORD": []byte("s3cret"), "user name": []byte("admin")},
@@ -64,16 +64,14 @@ func TestSealStrictRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"kind: SealedSecret", "  namespace: apps", `      "app": "db"`, `    type: "Opaque"`} {
-		if !strings.Contains(y, want) {
-			t.Errorf("manifest missing %q:\n%s", want, y)
-		}
+	if ss.Kind != "SealedSecret" || ss.Metadata.Namespace != "apps" ||
+		ss.Spec.Template.Type != "Opaque" || ss.Spec.Template.Metadata.Labels["app"] != "db" {
+		t.Errorf("unexpected resource: %+v", ss)
 	}
-	if strings.Contains(y, "s3cret") {
-		t.Fatal("plaintext leaked into manifest")
+	if j, _ := json.Marshal(ss); strings.Contains(string(j), "s3cret") {
+		t.Fatal("plaintext leaked into output")
 	}
-	m := regexp.MustCompile(`"PASSWORD": (\S+)`).FindStringSubmatch(y)
-	ct, _ := base64.StdEncoding.DecodeString(m[1])
+	ct, _ := base64.StdEncoding.DecodeString(ss.Spec.EncryptedData["PASSWORD"])
 	got, err := hybridDecrypt(priv, ct, []byte("apps/db"))
 	if err != nil || string(got) != "s3cret" {
 		t.Fatalf("decrypt = %q, %v", got, err)
@@ -149,10 +147,11 @@ func TestSealExisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out.Manifest, "last-applied") || strings.Contains(out.Manifest, "resourceVersion") {
-		t.Errorf("live-object metadata leaked:\n%s", out.Manifest)
+	tmpl := out.SealedSecret.Spec.Template.Metadata
+	if _, ok := tmpl.Annotations["kubectl.kubernetes.io/last-applied-configuration"]; ok {
+		t.Error("live-object metadata leaked into the template")
 	}
-	if !strings.Contains(out.Manifest, `"team": "core"`) || len(out.Keys) != 1 || len(out.Notes) != 1 {
+	if tmpl.Annotations["team"] != "core" || len(out.SealedSecret.Spec.EncryptedData) != 1 || len(out.Notes) != 1 {
 		t.Errorf("unexpected output: %+v", out)
 	}
 	if _, _, err := tl.sealExisting(context.Background(), nil, target{Namespace: "apps", Name: "missing"}); err == nil {
@@ -169,7 +168,7 @@ func TestGenerate(t *testing.T) {
 	in := generateInput{target: target{Namespace: "apps", Name: "new"},
 		Keys: []keySpec{{Key: "TOKEN"}, {Key: "PIN", Encoding: "alnum", Length: 20}}}
 	_, out, err := tl.generate(ctx, nil, in)
-	if err != nil || len(out.Keys) != 2 {
+	if err != nil || len(out.SealedSecret.Spec.EncryptedData) != 2 {
 		t.Fatalf("generate = %+v, %v", out, err)
 	}
 	in.target.Name = "db"

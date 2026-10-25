@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"os"
 	"os/exec"
@@ -19,18 +21,19 @@ func TestKubesealCompat(t *testing.T) {
 	}
 	priv, certPEM := testKey(t)
 	pub, _ := parseCert(certPEM)
-	manifest, err := sealStrict(pub, secretSpec{Namespace: "apps", Name: "db", Type: "Opaque",
+	ss, err := sealStrict(pub, secretSpec{Namespace: "apps", Name: "db", Type: "Opaque",
 		Data: map[string][]byte{"PASSWORD": []byte("s3cret")}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	manifest, _ := json.Marshal(ss) // kubeseal reads JSON as well as YAML
 	keyFile := filepath.Join(t.TempDir(), "key.pem")
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
 	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(bin, "--recovery-unseal", "--recovery-private-key", keyFile, "-o", "yaml")
-	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdin = bytes.NewReader(manifest)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("kubeseal: %v\n%s", err, out)
