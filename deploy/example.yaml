@@ -1,0 +1,94 @@
+# Minimal example. Adjust namespace, image tag, audience and resourceNames.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sealed-secrets-mcp
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sealed-secrets-mcp
+  namespace: sealed-secrets-mcp
+automountServiceAccountToken: false
+---
+# Read-only access to the named Secrets of one namespace. Repeat the Role and
+# RoleBinding for each namespace agents may seal. Without resourceNames the
+# server can read every Secret in the namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sealed-secrets-mcp
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+    resourceNames: [my-app-credentials]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sealed-secrets-mcp
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sealed-secrets-mcp
+subjects:
+  - kind: ServiceAccount
+    name: sealed-secrets-mcp
+    namespace: sealed-secrets-mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sealed-secrets-mcp
+  namespace: sealed-secrets-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: sealed-secrets-mcp}
+  template:
+    metadata:
+      labels: {app: sealed-secrets-mcp}
+    spec:
+      serviceAccountName: sealed-secrets-mcp
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: server
+          image: ghcr.io/itamarjp/sealed-secrets-mcp:latest
+          env:
+            - name: SEAL_AUDIENCE
+              value: https://seal.example.com/mcp
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          volumeMounts:
+            - {name: signing-key, mountPath: /etc/sealed-secrets-mcp, readOnly: true}
+      volumes:
+        - name: signing-key
+          secret:
+            secretName: sealed-secrets-mcp
+            items: [{key: signing-key, path: signing-key}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sealed-secrets-mcp
+  namespace: sealed-secrets-mcp
+spec:
+  selector: {app: sealed-secrets-mcp}
+  ports:
+    - {name: http, port: 80, targetPort: http}
