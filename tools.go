@@ -18,7 +18,7 @@ import (
 type tools struct {
 	kube          *kube
 	certURL       string
-	allowedTarget *target // required for OAuth mode; nil in legacy JWT mode
+	allowedTarget *target   // legacy single-target form (for compatibility)\n\tallowedTargets []target // exact OAuth allowlist; empty in legacy JWT mode
 	hybrid        bool    // enforce per-identity authorization in dual-auth mode
 }
 
@@ -71,6 +71,18 @@ func (t *tools) register(s *mcp.Server, allowGenerate bool) {
 	}
 }
 
+func (t *tools) targetAllowed(in target) bool {
+	if t.allowedTarget != nil && *t.allowedTarget == in {
+		return true
+	}
+	for _, permitted := range t.allowedTargets {
+		if permitted == in {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in target) (_ *mcp.CallToolResult, _ sealedOutput, err error) {
 	defer func() { log(ctx, "seal_existing_secret", in, err) }()
 	if err = in.validate(); err != nil {
@@ -79,13 +91,13 @@ func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in tar
 	if t.hybrid {
 		identity := clientFrom(ctx)
 		if strings.HasPrefix(identity, "pocketid:") {
-			if t.allowedTarget == nil || in.Namespace != t.allowedTarget.Namespace || in.Name != t.allowedTarget.Name {
+			if !t.targetAllowed(in) {
 				return nil, sealedOutput{}, errors.New("target is not permitted for this OAuth identity")
 			}
 		} else if !strings.HasPrefix(identity, "jwt:") {
 			return nil, sealedOutput{}, errors.New("unauthorized client identity")
 		}
-	} else if t.allowedTarget != nil && (in.Namespace != t.allowedTarget.Namespace || in.Name != t.allowedTarget.Name) {
+	} else if (t.allowedTarget != nil || len(t.allowedTargets) > 0) && !t.targetAllowed(in) {
 		return nil, sealedOutput{}, errors.New("target is not permitted for this OAuth identity")
 	}
 	live, err := t.kube.getSecret(ctx, in.Namespace, in.Name)
