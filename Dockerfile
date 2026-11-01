@@ -1,5 +1,4 @@
-FROM alpine:edge AS build
-RUN apk add --no-cache go
+FROM golang:1.27.3-alpine AS build
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 WORKDIR /src
 COPY go.mod go.sum ./
