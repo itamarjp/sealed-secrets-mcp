@@ -45,7 +45,7 @@ func TestHybridVerifierKeepsIdentitiesSeparate(t *testing.T) {
 		Scope: pocketScope,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: issuer.URL, Subject: "alice", Audience: jwt.ClaimStrings{legacy.audience},
-			IssuedAt: jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-time.Minute)),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 		},
 	})
