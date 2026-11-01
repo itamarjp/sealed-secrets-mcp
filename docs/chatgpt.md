@@ -36,9 +36,13 @@ env:
     value: https://id.ispbrasil.com.br
   - name: SEAL_POCKET_ID_SUB
     value: "REPLACE_WITH_EXACT_POCKET_ID_SUB"
+  - name: SEAL_POCKET_ID_TARGET_NAMESPACE
+    value: kingp2p-test
+  - name: SEAL_POCKET_ID_TARGET_NAME
+    value: kingp2p-r2-pgbackrest
 ```
 
-The OAuth mode does not require `SEAL_SIGNING_KEY_FILE`. Do not deploy until the real sub is configured through reviewed GitOps configuration. Do not commit access tokens, R2 credentials, or the contents of any Kubernetes Secret.
+The OAuth mode fails to start unless both target variables contain valid Kubernetes names. Every request for a different namespace or Secret name is denied before reaching Kubernetes. The existing cluster RBAC remains defense in depth.\n\nThe OAuth mode does not require `SEAL_SIGNING_KEY_FILE`. Do not deploy until the real sub is configured through reviewed GitOps configuration. Do not commit access tokens, R2 credentials, or the contents of any Kubernetes Secret.
 
 ## ChatGPT connection
 
