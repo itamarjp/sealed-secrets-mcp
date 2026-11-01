@@ -2,12 +2,12 @@
 
 ChatGPT is an OAuth MCP client. Pocket ID is the authorization server and passkey identity provider. `sealed-secrets-mcp` is an OAuth-protected resource server, with the public URL `https://seal.ispbrasil.com.br/mcp`.
 
-The repo now supports two **exclusive** server authentication modes:
+The repo supports three server authentication modes:
 
 - `SEAL_AUTH_MODE=jwt` (default): existing short-lived server-minted HS256 bearer tokens, for CLI clients.
-- `SEAL_AUTH_MODE=pocketid`: validate Pocket ID's RS256 JWT **access tokens** using its JWKS, requiring an exact issuer, resource audience, scope `seal:existing`, expiry, and exact user `sub`.
+- `SEAL_AUTH_MODE=pocketid`: Pocket ID OAuth-only mode.\n- `SEAL_AUTH_MODE=hybrid`: accept legacy HS256 JWTs and Pocket ID RS256 access tokens on the same `/mcp` URL; cryptographically verify each type separately, and use independent permissions.
 
-The Pocket ID mode exposes only `seal_existing_secret`. `generate_sealed_secret` is intentionally unavailable to ChatGPT. The cluster Role must independently restrict reads to the single approved Secret. No credential is embedded in the package.
+Pocket ID clients may only call `seal_existing_secret` on the configured exact target. In hybrid mode the `generate_sealed_secret` tool remains available to authenticated legacy JWT clients but rejects OAuth callers even if they invoke it directly. The cluster Role must independently restrict reads to the single approved Secret. No credential is embedded in the package.
 
 ## One-time Pocket ID administration
 
@@ -66,7 +66,7 @@ The ingress must route those paths to the service. Verify the unauthorized MCP r
 
 ## Existing CLI clients
 
-The default `jwt` mode and `token` subcommand remain for CLI integrations. Never paste the resulting bearer token into conversations. The ChatGPT OAuth mode and JWT mode should not be combined on a single endpoint.
+The default `jwt` mode and `token` subcommand remain for CLI integrations. Never paste the resulting bearer token into conversations. Use `SEAL_AUTH_MODE=hybrid` if existing Claude/Codex clients must continue working on the same endpoint; do not switch to `pocketid`-only mode in that case.
 
 ## References
 
@@ -74,3 +74,21 @@ The default `jwt` mode and `token` subcommand remain for CLI integrations. Never
 - [Pocket ID: Client ID Metadata Documents](https://pocket-id.org/docs/guides/client-id-metadata-documents)
 - [OpenAI: Plugin OAuth](https://developers.openai.com/plugins/build/auth)
 - [OpenAI: Connecting custom MCP servers](https://developers.openai.com/api/docs/guides/custom-mcp-server)
+
+## Hybrid migration (existing Claude/Codex connections)
+
+Set `SEAL_AUTH_MODE=hybrid` only after the hardened image is pinned and reviewed.
+Keep the existing signing-key SealedSecret and mount unchanged; both old HS256
+tokens and Pocket ID RS256 API access tokens are accepted at the same `/mcp` URL.
+The server checks the signing algorithm to dispatch each token to its own verifier;
+this does not trust unverified claims for authorization. Verified identities are
+internally marked `jwt:` or `pocketid:` so the tool handlers never confuse
+the legacy broad RBAC access with the exact OAuth target allowlist.
+
+OAuth metadata is advertised in the `WWW-Authenticate` 401 challenge.
+Unauthenticated MCP calls continue to require a bearer token.
+
+**Test before rollout:** issue an existing legacy JWT and verify its original
+tools still work; authenticate through Pocket ID and verify only the named
+KingP2P Secret can be sealed and that `generate_sealed_secret` is denied.
+Do not revoke or regenerate the existing signing key.
