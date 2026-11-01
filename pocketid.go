@@ -138,7 +138,9 @@ func (p *pocketVerifier) verify(ctx context.Context, raw string, _ *http.Request
 
 func protectedResourceHandler(resource, issuer string, rotationEnabled bool) http.Handler {
 	scopes := []string{pocketScope}
-	if rotationEnabled { scopes = append(scopes, rotateScope) }
+	if rotationEnabled {
+		scopes = append(scopes, rotateScope)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "public, max-age=300")
