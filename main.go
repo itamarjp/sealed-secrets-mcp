@@ -93,13 +93,21 @@ func serve() error {
 			return err
 		}
 		verify = s.verify
-	case "pocketid":
+	case "pocketid", "hybrid":
 		var err error
 		pocket, err = newPocketVerifier(os.Getenv("SEAL_POCKET_ID_ISSUER"), os.Getenv("SEAL_AUDIENCE"), os.Getenv("SEAL_POCKET_ID_SUB"))
 		if err != nil {
 			return err
 		}
-		verify = pocket.verify
+		if mode == "hybrid" {
+			legacy, err := newSigner()
+			if err != nil {
+				return err
+			}
+			verify = (&hybridVerifier{legacy: legacy, pocket: pocket}).verify
+		} else {
+			verify = pocket.verify
+		}
 	default:
 		return fmt.Errorf("unknown SEAL_AUTH_MODE %q", mode)
 	}
@@ -115,6 +123,7 @@ func serve() error {
 			return fmt.Errorf("Pocket ID target must be configured: %w", err)
 		}
 		t.allowedTarget = target
+		t.hybrid = mode == "hybrid"
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "sealed-secrets-mcp", Version: version}, nil)
