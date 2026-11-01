@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -138,8 +139,12 @@ func serve() error {
 	}
 	var bearerOptions *auth.RequireBearerTokenOptions
 	if pocket != nil {
+		resourceURL, err := url.Parse(resource)
+		if err != nil {
+			return err
+		}
 		bearerOptions = &auth.RequireBearerTokenOptions{
-			ResourceMetadataURL: "https://" + "seal.ispbrasil.com.br/.well-known/oauth-protected-resource/mcp",
+			ResourceMetadataURL: resourceURL.Scheme + "://" + resourceURL.Host + "/.well-known/oauth-protected-resource" + resourceURL.EscapedPath(),
 		}
 	}
 	mux.Handle("/mcp", auth.RequireBearerToken(verify, bearerOptions)(
