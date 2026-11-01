@@ -134,7 +134,7 @@ func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in tar
 	} else if (t.allowedTarget != nil || len(t.allowedTargets) > 0) && !t.targetAllowed(in) {
 		return nil, sealedOutput{}, errors.New("target is not permitted for this OAuth identity")
 	} else if t.allowedTarget != nil || len(t.allowedTargets) > 0 {
-		if strings.HasPrefix(clientFrom(ctx), "pocketid:") && !scoped(ctx, pocketScope) {
+		if clientFrom(ctx) != "unknown" && !scoped(ctx, pocketScope) {
 			return nil, sealedOutput{}, errors.New("seal:existing scope is required")
 		}
 	}
@@ -216,7 +216,7 @@ func (t *tools) rotate(ctx context.Context, _ *mcp.CallToolRequest, in rotateInp
 	defer func() { log(ctx, "rotate_sealed_secret", in.target, err) }()
 	if err = in.validate(); err != nil { return nil, sealedOutput{}, err }
 	identity := clientFrom(ctx)
-	if !strings.HasPrefix(identity, "pocketid:") || !scoped(ctx, rotateScope) {
+	if identity == "unknown" || (t.hybrid && !strings.HasPrefix(identity, "pocketid:")) || !scoped(ctx, rotateScope) {
 		return nil, sealedOutput{}, errors.New("OAuth seal:rotate scope is required")
 	}
 	if !t.targetAllowed(in.target) || !t.rotateAllowed(in.target) {
