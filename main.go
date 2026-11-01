@@ -84,7 +84,7 @@ func token(args []string) error {
 
 func serve() error {
 	mode := env("SEAL_AUTH_MODE", "jwt")
-	var verify auth.TokenVerifier
+	var verify func(context.Context, string, *http.Request) (*auth.TokenInfo, error)
 	var pocket *pocketVerifier
 	switch mode {
 	case "jwt":
