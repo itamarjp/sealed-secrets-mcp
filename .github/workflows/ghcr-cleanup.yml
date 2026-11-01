@@ -40,7 +40,7 @@ jobs:
           sparse-checkout: .github/scripts
 
       - name: Test the plan
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: require('./.github/scripts/ghcr-cleanup.test.cjs')
 
@@ -60,7 +60,7 @@ jobs:
           sparse-checkout: .github/scripts
 
       - name: Clean up
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PACKAGES: sealed-secrets-mcp
           PROTECT_TAGS: '^(latest|v?\d+\.\d+\.\d+)$'
