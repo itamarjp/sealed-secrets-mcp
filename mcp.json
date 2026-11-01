@@ -7,8 +7,15 @@
       "extensions": {
         "com.openai": {
           "auth": {
-            "type": "api_key",
-            "headerScheme": "bearer"
+            "type": "oauth",
+            "client": {
+              "mode": "cimd"
+            },
+            "authorizationServerBase": "https://id.ispbrasil.com.br",
+            "resource": "https://seal.ispbrasil.com.br/mcp",
+            "baseScopes": [
+              "seal:existing"
+            ]
           }
         }
       }
