@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "sealed-secrets-mcp",
+  "version": "0.1.0",
+  "description": "Seal specifically authorized Kubernetes Secrets for GitOps without exposing plaintext.",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Sealed Secrets MCP",
+        "shortDescription": "Turn allowlisted Kubernetes Secrets into encrypted GitOps manifests.",
+        "developerName": "itamarjp",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Read"
+        ],
+        "websiteURL": "https://github.com/itamarjp/sealed-secrets-mcp"
+      }
+    }
+  }
+}
