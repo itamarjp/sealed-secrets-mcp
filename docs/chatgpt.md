@@ -113,3 +113,60 @@ setting remains compatible when `SEAL_POCKET_ID_TARGET_NAMES` is absent.
 Kubernetes RBAC must separately permit `get` on every exact Secret name.
 OAuth clients may call `seal_existing_secret` only; generation remains denied
 under `SEAL_AUTH_MODE=hybrid`. Do not expose a broader Role just to add a target.
+
+## Explicit OAuth Secret rotation (opt-in)
+
+`rotate_sealed_secret` is a separate, privileged MCP tool for an **existing**
+Secret. It is disabled unless an operator configures exact targets:
+
+```yaml
+- name: SEAL_POCKET_ID_TARGET_NAMESPACE
+  value: kingp2p-test
+- name: SEAL_POCKET_ID_TARGET_NAMES
+  value: kingp2p-r2-pgbackrest,kingp2p-postgres-auth
+- name: SEAL_POCKET_ID_ROTATE_TARGET_NAMES
+  value: kingp2p-postgres-auth
+```
+
+Each rotation target must also be in the read allowlist. No wildcards or
+cross-namespace escalation. A verified Pocket ID access token requires the
+**additional** `seal:rotate` scope; `seal:existing` alone cannot rotate.
+Configure this separate API permission in Pocket ID and explicitly grant it to
+the administrator's ChatGPT OAuth client and allowed user. The protected-resource
+metadata advertises this scope only when rotation targets are configured.
+Legacy JWT clients cannot invoke rotation, including in hybrid mode.
+
+The tool accepts the existing resource name and keys to regenerate:
+
+```json
+{
+  "namespace": "kingp2p-test",
+  "name": "kingp2p-postgres-auth",
+  "keys": [{"key": "password", "encoding": "hex", "length": 32}]
+}
+```
+
+The tool checks the Secret exists and each key already exists. It preserves all
+unrotated keys and labels, returns **only the new strict-scope SealedSecret**
+(ciphertext; no plaintext password), and emits a credential-free audit log.
+
+### Safe GitOps rotation sequence
+
+1. Agent calls `rotate_sealed_secret` and commits the ciphertext for the same
+   Secret name to an audited GitHub PR. No live Secret changes yet.
+2. Operator reviews and merges the PR; Argo CD and Sealed Secrets reconcile it.
+3. Confirm `Synced=True` and `password` length is exactly 64 bytes via
+   `wc -c`, without printing it.
+4. For PostgreSQL, sync the database role password from the now-current Secret
+   via a locally trusted admin connection. Use stdin, not command-line arguments,
+   and test TCP/SCRAM. Do **not** regenerate the password during this step.
+5. Run a single backup Job and test an isolated restore before enabling any
+   automatic backups.
+
+This changes credentials used by workloads after reconciliation; coordinate
+maintenance windows and dependent clients. There can be a brief authentication
+mismatch between secret update and database role update. The MCP never writes
+Secrets or PostgreSQL state. Audit failures and restore access if an operation
+fails. Keep old Git history protected because old ciphertext remains usable with
+the controller's private key.
+

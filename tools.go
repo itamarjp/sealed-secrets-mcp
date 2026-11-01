@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -20,6 +21,7 @@ type tools struct {
 	certURL        string
 	allowedTarget  *target
 	allowedTargets []target
+	rotateTargets  []target
 	hybrid         bool
 }
 
@@ -53,6 +55,35 @@ type generateInput struct {
 	Keys []keySpec `json:"keys" jsonschema:"keys to fill with random values"`
 }
 
+// Rotation preserves the exact namespace/name and all unmodified keys.
+// It only returns encrypted output; the cluster remains unchanged.
+type rotateInput struct {
+	target
+	Keys []keySpec `json:"keys" jsonschema:"existing keys to replace with random values"`
+}
+
+func scoped(ctx context.Context, scope string) bool {
+	info := auth.TokenInfoFromContext(ctx)
+	if info == nil {
+		return false
+	}
+	for _, s := range info.Scopes {
+		if s == scope {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *tools) rotateAllowed(in target) bool {
+	for _, allowed := range t.rotateTargets {
+		if allowed == in {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *tools) register(s *mcp.Server, allowGenerate bool) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "seal_existing_secret",
@@ -61,6 +92,13 @@ func (t *tools) register(s *mcp.Server, allowGenerate bool) {
 			"without rotating it. Only ciphertext is returned.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, t.sealExisting)
+	if len(t.rotateTargets) > 0 {
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "rotate_sealed_secret",
+			Description: "Generate new random values for named keys of an existing exact-target Secret and return only a strict-scope SealedSecret. Requires OAuth seal:rotate scope and explicit per-Secret rotation allowlist. Does not write to Kubernetes; commit and reconcile via reviewed GitOps before updating workloads.",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		}, t.rotate)
+	}
 	if allowGenerate {
 		mcp.AddTool(s, &mcp.Tool{
 			Name: "generate_sealed_secret",
@@ -91,6 +129,9 @@ func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in tar
 	}
 	if t.hybrid {
 		identity := clientFrom(ctx)
+		if strings.HasPrefix(identity, "pocketid:") && !scoped(ctx, pocketScope) {
+			return nil, sealedOutput{}, errors.New("seal:existing scope is required")
+		}
 		if strings.HasPrefix(identity, "pocketid:") {
 			if !t.targetAllowed(in) {
 				return nil, sealedOutput{}, errors.New("target is not permitted for this OAuth identity")
@@ -100,6 +141,10 @@ func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in tar
 		}
 	} else if (t.allowedTarget != nil || len(t.allowedTargets) > 0) && !t.targetAllowed(in) {
 		return nil, sealedOutput{}, errors.New("target is not permitted for this OAuth identity")
+	} else if t.allowedTarget != nil || len(t.allowedTargets) > 0 {
+		if clientFrom(ctx) != "unknown" && !scoped(ctx, pocketScope) {
+			return nil, sealedOutput{}, errors.New("seal:existing scope is required")
+		}
 	}
 	live, err := t.kube.getSecret(ctx, in.Namespace, in.Name)
 	if errors.Is(err, errNotFound) {
@@ -170,6 +215,59 @@ func (t *tools) generate(ctx context.Context, _ *mcp.CallToolRequest, in generat
 		typ = "Opaque"
 	}
 	out, err := t.seal(ctx, secretSpec{Namespace: in.Namespace, Name: in.Name, Type: typ, Data: data})
+	return nil, out, err
+}
+
+// rotate is deliberately restricted to OAuth identities with an explicit
+// step-up scope and a per-resource allowlist. Legacy JWTs cannot rotate.
+func (t *tools) rotate(ctx context.Context, _ *mcp.CallToolRequest, in rotateInput) (_ *mcp.CallToolResult, _ sealedOutput, err error) {
+	defer func() { log(ctx, "rotate_sealed_secret", in.target, err) }()
+	if err = in.validate(); err != nil {
+		return nil, sealedOutput{}, err
+	}
+	identity := clientFrom(ctx)
+	if identity == "unknown" || (t.hybrid && !strings.HasPrefix(identity, "pocketid:")) || !scoped(ctx, rotateScope) {
+		return nil, sealedOutput{}, errors.New("OAuth seal:rotate scope is required")
+	}
+	if !t.targetAllowed(in.target) || !t.rotateAllowed(in.target) {
+		return nil, sealedOutput{}, errors.New("target is not permitted for OAuth rotation")
+	}
+	if len(in.Keys) == 0 {
+		return nil, sealedOutput{}, errors.New("at least one existing key is required")
+	}
+	live, err := t.kube.getSecret(ctx, in.Namespace, in.Name)
+	if err != nil {
+		return nil, sealedOutput{}, fmt.Errorf("rotation requires existing Secret: %w", err)
+	}
+	if live.Type == "kubernetes.io/service-account-token" {
+		return nil, sealedOutput{}, errors.New("service account tokens cannot be rotated")
+	}
+	data := make(map[string][]byte, len(live.Data))
+	for key, value := range live.Data {
+		data[key] = append([]byte(nil), value...)
+	}
+	seen := map[string]bool{}
+	for _, key := range in.Keys {
+		if !secretKey.MatchString(key.Key) || seen[key.Key] {
+			return nil, sealedOutput{}, errors.New("invalid or duplicate key")
+		}
+		seen[key.Key] = true
+		if _, exists := data[key.Key]; !exists {
+			return nil, sealedOutput{}, errors.New("rotation key does not exist in Secret")
+		}
+		value, e := randomValue(key)
+		if e != nil {
+			return nil, sealedOutput{}, e
+		}
+		data[key.Key] = value
+	}
+	out, err := t.seal(ctx, secretSpec{
+		Namespace: in.Namespace, Name: in.Name, Type: live.Type,
+		Labels: live.Metadata.Labels, Annotations: cleanAnnotations(live.Metadata.Annotations), Data: data,
+	})
+	if err == nil {
+		out.Notes = []string{"Rotation is NOT applied to the cluster. Commit this manifest to GitOps, wait for SealedSecret reconciliation, then update application credentials. Existing Secret is unchanged until GitOps applies."}
+	}
 	return nil, out, err
 }
 
