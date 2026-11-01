@@ -1,0 +1,76 @@
+name: Clean up GHCR images
+
+# Deletes old versions of this repository's GHCR packages every week, so
+# untagged manifests and old builds do not fill the Packages storage quota.
+# .github/scripts/ghcr-cleanup.cjs explains what is kept: protected tags, the
+# newest builds, anything newer than KEEP_DAYS, and the child manifests and
+# signatures of every kept image. Manual runs are a dry run by default and
+# only list what would be deleted (Actions > the run > log and Summary).
+
+on:
+  schedule:
+    - cron: "23 8 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Only list what would be deleted
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - .github/scripts/ghcr-cleanup*
+      - .github/workflows/ghcr-cleanup.yml
+
+permissions: {}
+
+concurrency:
+  group: ghcr-cleanup-${{ github.event_name == 'pull_request' && github.ref || 'packages' }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - name: Test the plan
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: require('./.github/scripts/ghcr-cleanup.test.cjs')
+
+  cleanup:
+    # Never on pull requests: only the default branch's script gets this token.
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - name: Clean up
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PACKAGES: sealed-secrets-mcp
+          PROTECT_TAGS: '^(latest|v?\d+\.\d+\.\d+)$'
+          KEEP_LATEST: "15"
+          KEEP_DAYS: "30"
+          MAX_DELETE: "300"
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const run = require('./.github/scripts/ghcr-cleanup.cjs')
+            await run({ github, context, core })
