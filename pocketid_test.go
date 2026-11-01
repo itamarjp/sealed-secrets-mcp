@@ -56,6 +56,11 @@ func TestPocketVerifier(t *testing.T) {
 	if err != nil || got.UserID != "alice" {
 		t.Fatalf("valid token: %+v, %v", got, err)
 	}
+	rotateToken := sign("alice", p.audience, rotateScope, "at+jwt", time.Now().Add(time.Hour))
+	rotated, err := p.verify(context.Background(), rotateToken, nil)
+	if err != nil || len(rotated.Scopes) != 1 || rotated.Scopes[0] != rotateScope {
+		t.Fatalf("rotate scope was not retained: %+v, %v", rotated, err)
+	}
 	cases := map[string]string{
 		"wrong user":     sign("bob", p.audience, pocketScope, "at+jwt", time.Now().Add(time.Hour)),
 		"wrong audience": sign("alice", "https://other.example.com", pocketScope, "at+jwt", time.Now().Add(time.Hour)),
