@@ -16,10 +16,11 @@ import (
 )
 
 type tools struct {
-	kube          *kube
-	certURL       string
-	allowedTarget *target   // legacy single-target form (for compatibility)\n\tallowedTargets []target // exact OAuth allowlist; empty in legacy JWT mode
-	hybrid        bool    // enforce per-identity authorization in dual-auth mode
+	kube           *kube
+	certURL        string
+	allowedTarget  *target
+	allowedTargets []target
+	hybrid         bool
 }
 
 type target struct {
