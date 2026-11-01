@@ -83,9 +83,21 @@ func token(args []string) error {
 }
 
 func serve() error {
-	s, err := newSigner()
-	if err != nil {
-		return err
+	mode := env("SEAL_AUTH_MODE", "jwt")
+	var verify auth.TokenVerifier
+	var pocket *pocketVerifier
+	switch mode {
+	case "jwt":
+		s, err := newSigner()
+		if err != nil { return err }
+		verify = s.verify
+	case "pocketid":
+		var err error
+		pocket, err = newPocketVerifier(os.Getenv("SEAL_POCKET_ID_ISSUER"), os.Getenv("SEAL_AUDIENCE"), os.Getenv("SEAL_POCKET_ID_SUB"))
+		if err != nil { return err }
+		verify = pocket.verify
+	default:
+		return fmt.Errorf("unknown SEAL_AUTH_MODE %q", mode)
 	}
 	k, err := newKube(os.Getenv("SEAL_KUBE_API"))
 	if err != nil {
@@ -95,10 +107,16 @@ func serve() error {
 		"http://sealed-secrets-controller.kube-system.svc:8080/v1/cert.pem")}
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "sealed-secrets-mcp", Version: version}, nil)
-	t.register(server)
+	t.register(server, mode != "pocketid")
 
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", auth.RequireBearerToken(s.verify, nil)(
+	resource := os.Getenv("SEAL_AUDIENCE")
+	if pocket != nil {
+		metadata := protectedResourceHandler(resource, pocket.issuer)
+		mux.Handle("/.well-known/oauth-protected-resource", metadata)
+		mux.Handle("/.well-known/oauth-protected-resource/mcp", metadata)
+	}
+	mux.Handle("/mcp", auth.RequireBearerToken(verify, nil)(
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
 			&mcp.StreamableHTTPOptions{Stateless: true})))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
