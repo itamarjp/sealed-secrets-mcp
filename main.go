@@ -140,6 +140,24 @@ func serve() error {
 			seen[name] = true
 			t.allowedTargets = append(t.allowedTargets, allowed)
 		}
+		// Rotation is independent of the read allowlist. Empty means denied.
+		// Each exact name must already be a permitted OAuth read target.
+		rotateNames := os.Getenv("SEAL_POCKET_ID_ROTATE_TARGET_NAMES")
+		rotateSeen := make(map[string]bool)
+		if rotateNames != "" {
+			for _, part := range strings.Split(rotateNames, ",") {
+				name := strings.TrimSpace(part)
+				allowed := target{Namespace: ns, Name: name}
+				if err := allowed.validate(); err != nil {
+					return fmt.Errorf("invalid OAuth rotation target %q: %w", name, err)
+				}
+				if !t.targetAllowed(allowed) || rotateSeen[name] {
+					return fmt.Errorf("OAuth rotation target %q must be a unique read-allowed target", name)
+				}
+				rotateSeen[name] = true
+				t.rotateTargets = append(t.rotateTargets, allowed)
+			}
+		}
 		t.hybrid = mode == "hybrid"
 	}
 
@@ -149,7 +167,7 @@ func serve() error {
 	mux := http.NewServeMux()
 	resource := os.Getenv("SEAL_AUDIENCE")
 	if pocket != nil {
-		metadata := protectedResourceHandler(resource, pocket.issuer)
+		metadata := protectedResourceHandler(resource, pocket.issuer, len(t.rotateTargets) > 0)
 		mux.Handle("/.well-known/oauth-protected-resource", metadata)
 		mux.Handle("/.well-known/oauth-protected-resource/mcp", metadata)
 	}
