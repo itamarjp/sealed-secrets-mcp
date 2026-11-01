@@ -118,7 +118,7 @@ Grok (xAI API remote MCP tool): pass the URL as `server_url` and the token as `a
 claude.ai custom connectors support fixed request headers only as a beta for some organizations;
 OAuth is not implemented here.
 
-ChatGPT: see [integration and Pocket ID/OAuth requirements](docs/chatgpt.md). The included `plugin.json` and `mcp.json` describe the portable plugin and fixed-bearer transport; the current ChatGPT web connection form requires a supported OAuth flow and cannot directly supply this fixed token.
+ChatGPT: see [integration and Pocket ID/OAuth requirements](docs/chatgpt.md). The included `plugin.json` and `mcp.json` declare Pocket ID OAuth for ChatGPT. The optional `SEAL_AUTH_MODE=pocketid` resource-server mode validates audience-bound Pocket ID access tokens and restricts tools; deployment requires Pocket ID API/CIMD configuration and an explicit allowed user subject.
 
 ## Development
 
