@@ -12,8 +12,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type tools struct {
@@ -64,14 +64,22 @@ type rotateInput struct {
 
 func scoped(ctx context.Context, scope string) bool {
 	info := auth.TokenInfoFromContext(ctx)
-	if info == nil { return false }
-	for _, s := range info.Scopes { if s == scope { return true } }
+	if info == nil {
+		return false
+	}
+	for _, s := range info.Scopes {
+		if s == scope {
+			return true
+		}
+	}
 	return false
 }
 
 func (t *tools) rotateAllowed(in target) bool {
 	for _, allowed := range t.rotateTargets {
-		if allowed == in { return true }
+		if allowed == in {
+			return true
+		}
 	}
 	return false
 }
@@ -214,7 +222,9 @@ func (t *tools) generate(ctx context.Context, _ *mcp.CallToolRequest, in generat
 // step-up scope and a per-resource allowlist. Legacy JWTs cannot rotate.
 func (t *tools) rotate(ctx context.Context, _ *mcp.CallToolRequest, in rotateInput) (_ *mcp.CallToolResult, _ sealedOutput, err error) {
 	defer func() { log(ctx, "rotate_sealed_secret", in.target, err) }()
-	if err = in.validate(); err != nil { return nil, sealedOutput{}, err }
+	if err = in.validate(); err != nil {
+		return nil, sealedOutput{}, err
+	}
 	identity := clientFrom(ctx)
 	if identity == "unknown" || (t.hybrid && !strings.HasPrefix(identity, "pocketid:")) || !scoped(ctx, rotateScope) {
 		return nil, sealedOutput{}, errors.New("OAuth seal:rotate scope is required")
@@ -222,21 +232,33 @@ func (t *tools) rotate(ctx context.Context, _ *mcp.CallToolRequest, in rotateInp
 	if !t.targetAllowed(in.target) || !t.rotateAllowed(in.target) {
 		return nil, sealedOutput{}, errors.New("target is not permitted for OAuth rotation")
 	}
-	if len(in.Keys) == 0 { return nil, sealedOutput{}, errors.New("at least one existing key is required") }
+	if len(in.Keys) == 0 {
+		return nil, sealedOutput{}, errors.New("at least one existing key is required")
+	}
 	live, err := t.kube.getSecret(ctx, in.Namespace, in.Name)
-	if err != nil { return nil, sealedOutput{}, fmt.Errorf("rotation requires existing Secret: %w", err) }
+	if err != nil {
+		return nil, sealedOutput{}, fmt.Errorf("rotation requires existing Secret: %w", err)
+	}
 	if live.Type == "kubernetes.io/service-account-token" {
 		return nil, sealedOutput{}, errors.New("service account tokens cannot be rotated")
 	}
 	data := make(map[string][]byte, len(live.Data))
-	for key, value := range live.Data { data[key] = append([]byte(nil), value...) }
+	for key, value := range live.Data {
+		data[key] = append([]byte(nil), value...)
+	}
 	seen := map[string]bool{}
 	for _, key := range in.Keys {
-		if !secretKey.MatchString(key.Key) || seen[key.Key] { return nil, sealedOutput{}, errors.New("invalid or duplicate key") }
+		if !secretKey.MatchString(key.Key) || seen[key.Key] {
+			return nil, sealedOutput{}, errors.New("invalid or duplicate key")
+		}
 		seen[key.Key] = true
-		if _, exists := data[key.Key]; !exists { return nil, sealedOutput{}, errors.New("rotation key does not exist in Secret") }
+		if _, exists := data[key.Key]; !exists {
+			return nil, sealedOutput{}, errors.New("rotation key does not exist in Secret")
+		}
 		value, e := randomValue(key)
-		if e != nil { return nil, sealedOutput{}, e }
+		if e != nil {
+			return nil, sealedOutput{}, e
+		}
 		data[key.Key] = value
 	}
 	out, err := t.seal(ctx, secretSpec{
