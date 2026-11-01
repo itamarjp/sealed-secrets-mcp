@@ -15,7 +15,8 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"syscall"\n\t"strings"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
