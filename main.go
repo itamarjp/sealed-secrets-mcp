@@ -15,7 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"syscall"
+	"syscall"\n\t"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -119,11 +119,26 @@ func serve() error {
 	t := &tools{kube: k, certURL: env("SEAL_CERT_URL",
 		"http://sealed-secrets-controller.kube-system.svc:8080/v1/cert.pem")}
 	if pocket != nil {
-		target := &target{Namespace: os.Getenv("SEAL_POCKET_ID_TARGET_NAMESPACE"), Name: os.Getenv("SEAL_POCKET_ID_TARGET_NAME")}
-		if err := target.validate(); err != nil {
-			return fmt.Errorf("Pocket ID target must be configured: %w", err)
+		// A comma-separated list permits only individually named Secrets.
+		// Retain SEAL_POCKET_ID_TARGET_NAME for existing single-target deployments.
+		ns := os.Getenv("SEAL_POCKET_ID_TARGET_NAMESPACE")
+		names := os.Getenv("SEAL_POCKET_ID_TARGET_NAMES")
+		if names == "" {
+			names = os.Getenv("SEAL_POCKET_ID_TARGET_NAME")
 		}
-		t.allowedTarget = target
+		seen := make(map[string]bool)
+		for _, part := range strings.Split(names, ",") {
+			name := strings.TrimSpace(part)
+			allowed := target{Namespace: ns, Name: name}
+			if err := allowed.validate(); err != nil {
+				return fmt.Errorf("invalid Pocket ID target %q: %w", name, err)
+			}
+			if seen[name] {
+				return fmt.Errorf("duplicate Pocket ID target %q", name)
+			}
+			seen[name] = true
+			t.allowedTargets = append(t.allowedTargets, allowed)
+		}
 		t.hybrid = mode == "hybrid"
 	}
 
