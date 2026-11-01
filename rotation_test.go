@@ -47,5 +47,7 @@ func TestGeneratedRotationMaterialNoNewline(t *testing.T) {
 	if len(v) != 64 {
 		t.Fatalf("expected 64 bytes, got %d", len(v))
 	}
-	if strings.ContainsAny(string(v), "\r\n") { t.Fatal("credential includes newline") }
+	if strings.ContainsAny(string(v), "\r\n") {
+		t.Fatal("credential includes newline")
+	}
 }
