@@ -41,7 +41,11 @@ func TestRotationUsesExactResourceTarget(t *testing.T) {
 
 func TestGeneratedRotationMaterialNoNewline(t *testing.T) {
 	v, err := randomValue(keySpec{Key: "password", Encoding: "hex", Length: 32})
-	if err != nil { t.Fatal(err) }
-	if len(v) != 64 { t.Fatalf("expected 64 bytes, got %d", len(v)) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v) != 64 {
+		t.Fatalf("expected 64 bytes, got %d", len(v))
+	}
 	if strings.ContainsAny(string(v), "\r\n") { t.Fatal("credential includes newline") }
 }
