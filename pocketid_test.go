@@ -85,10 +85,13 @@ func TestPocketConfiguration(t *testing.T) {
 	if _, err := newPocketVerifier("https://id.example.com", "https://seal.example.com/mcp", ""); err == nil {
 		t.Error("accepted missing allowed subject")
 	}
-	h := protectedResourceHandler("https://seal.example.com/mcp", "https://id.example.com")
+	h := protectedResourceHandler("https://seal.example.com/mcp", "https://id.example.com", false)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), pocketScope) {
 		t.Fatalf("bad metadata %d: %s", w.Code, w.Body.String())
 	}
+	w = httptest.NewRecorder()
+	protectedResourceHandler("https://seal.example.com/mcp", "https://id.example.com", true).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(w.Body.String(), rotateScope) { t.Fatal("rotation scope not advertised when enabled") }
 }
