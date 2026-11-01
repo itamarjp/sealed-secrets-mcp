@@ -59,13 +59,13 @@ func (t *tools) register(s *mcp.Server, allowGenerate bool) {
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, t.sealExisting)
 	if allowGenerate {
-	mcp.AddTool(s, &mcp.Tool{
-		Name: "generate_sealed_secret",
-		Description: "Create a new credential: generate random values server-side and return them only as a " +
-			"strict-scope SealedSecret resource (JSON). Refuses if the Secret already exists in the cluster, so an " +
-			"existing credential is never rotated by accident. Nothing is written to the cluster.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, t.generate)
+		mcp.AddTool(s, &mcp.Tool{
+			Name: "generate_sealed_secret",
+			Description: "Create a new credential: generate random values server-side and return them only as a " +
+				"strict-scope SealedSecret resource (JSON). Refuses if the Secret already exists in the cluster, so an " +
+				"existing credential is never rotated by accident. Nothing is written to the cluster.",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		}, t.generate)
 	}
 }
 
