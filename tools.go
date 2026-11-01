@@ -19,6 +19,7 @@ type tools struct {
 	kube          *kube
 	certURL       string
 	allowedTarget *target // required for OAuth mode; nil in legacy JWT mode
+	hybrid        bool    // enforce per-identity authorization in dual-auth mode
 }
 
 type target struct {
@@ -75,7 +76,16 @@ func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in tar
 	if err = in.validate(); err != nil {
 		return nil, sealedOutput{}, err
 	}
-	if t.allowedTarget != nil && (in.Namespace != t.allowedTarget.Namespace || in.Name != t.allowedTarget.Name) {
+	if t.hybrid {
+		identity := clientFrom(ctx)
+		if strings.HasPrefix(identity, "pocketid:") {
+			if t.allowedTarget == nil || in.Namespace != t.allowedTarget.Namespace || in.Name != t.allowedTarget.Name {
+				return nil, sealedOutput{}, errors.New("target is not permitted for this OAuth identity")
+			}
+		} else if !strings.HasPrefix(identity, "jwt:") {
+			return nil, sealedOutput{}, errors.New("unauthorized client identity")
+		}
+	} else if t.allowedTarget != nil && (in.Namespace != t.allowedTarget.Namespace || in.Name != t.allowedTarget.Name) {
 		return nil, sealedOutput{}, errors.New("target is not permitted for this OAuth identity")
 	}
 	live, err := t.kube.getSecret(ctx, in.Namespace, in.Name)
@@ -115,6 +125,9 @@ func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in tar
 
 func (t *tools) generate(ctx context.Context, _ *mcp.CallToolRequest, in generateInput) (_ *mcp.CallToolResult, _ sealedOutput, err error) {
 	defer func() { log(ctx, "generate_sealed_secret", in.target, err) }()
+	if t.hybrid && !strings.HasPrefix(clientFrom(ctx), "jwt:") {
+		return nil, sealedOutput{}, errors.New("credential generation is not permitted for OAuth clients")
+	}
 	if err = in.validate(); err != nil {
 		return nil, sealedOutput{}, err
 	}
