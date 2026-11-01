@@ -182,6 +182,28 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+func TestPocketMultipleExactTargets(t *testing.T) {
+	tl, _ := fakeCluster(t)
+	tl.allowedTargets = []target{
+		{Namespace: "apps", Name: "db"},
+		{Namespace: "apps", Name: "r2"},
+	}
+	for _, allowed := range tl.allowedTargets {
+		if !tl.targetAllowed(allowed) {
+			t.Errorf("rejected explicit target: %+v", allowed)
+		}
+	}
+	for _, denied := range []target{
+		{Namespace: "apps", Name: "db-other"},
+		{Namespace: "apps", Name: "r2-extra"},
+		{Namespace: "other", Name: "db"},
+	} {
+		if tl.targetAllowed(denied) {
+			t.Errorf("accepted out-of-scope target: %+v", denied)
+		}
+	}
+}
+
 func TestPocketTargetAllowlist(t *testing.T) {
 	tl, _ := fakeCluster(t)
 	tl.allowedTarget = &target{Namespace: "apps", Name: "db"}
