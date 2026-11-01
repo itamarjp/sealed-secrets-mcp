@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -93,13 +94,21 @@ func serve() error {
 			return err
 		}
 		verify = s.verify
-	case "pocketid":
+	case "pocketid", "hybrid":
 		var err error
 		pocket, err = newPocketVerifier(os.Getenv("SEAL_POCKET_ID_ISSUER"), os.Getenv("SEAL_AUDIENCE"), os.Getenv("SEAL_POCKET_ID_SUB"))
 		if err != nil {
 			return err
 		}
-		verify = pocket.verify
+		if mode == "hybrid" {
+			legacy, err := newSigner()
+			if err != nil {
+				return err
+			}
+			verify = (&hybridVerifier{legacy: legacy, pocket: pocket}).verify
+		} else {
+			verify = pocket.verify
+		}
 	default:
 		return fmt.Errorf("unknown SEAL_AUTH_MODE %q", mode)
 	}
@@ -115,6 +124,7 @@ func serve() error {
 			return fmt.Errorf("Pocket ID target must be configured: %w", err)
 		}
 		t.allowedTarget = target
+		t.hybrid = mode == "hybrid"
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "sealed-secrets-mcp", Version: version}, nil)
@@ -127,7 +137,17 @@ func serve() error {
 		mux.Handle("/.well-known/oauth-protected-resource", metadata)
 		mux.Handle("/.well-known/oauth-protected-resource/mcp", metadata)
 	}
-	mux.Handle("/mcp", auth.RequireBearerToken(verify, nil)(
+	var bearerOptions *auth.RequireBearerTokenOptions
+	if pocket != nil {
+		resourceURL, err := url.Parse(resource)
+		if err != nil {
+			return err
+		}
+		bearerOptions = &auth.RequireBearerTokenOptions{
+			ResourceMetadataURL: resourceURL.Scheme + "://" + resourceURL.Host + "/.well-known/oauth-protected-resource" + resourceURL.EscapedPath(),
+		}
+	}
+	mux.Handle("/mcp", auth.RequireBearerToken(verify, bearerOptions)(
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
 			&mcp.StreamableHTTPOptions{Stateless: true})))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
