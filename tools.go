@@ -94,7 +94,7 @@ func (t *tools) register(s *mcp.Server, allowGenerate bool) {
 	}, t.sealExisting)
 	if len(t.rotateTargets) > 0 {
 		mcp.AddTool(s, &mcp.Tool{
-			Name: "rotate_sealed_secret",
+			Name:        "rotate_sealed_secret",
 			Description: "Generate new random values for named keys of an existing exact-target Secret and return only a strict-scope SealedSecret. Requires OAuth seal:rotate scope and explicit per-Secret rotation allowlist. Does not write to Kubernetes; commit and reconcile via reviewed GitOps before updating workloads.",
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, t.rotate)
