@@ -134,7 +134,9 @@ func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in tar
 	} else if (t.allowedTarget != nil || len(t.allowedTargets) > 0) && !t.targetAllowed(in) {
 		return nil, sealedOutput{}, errors.New("target is not permitted for this OAuth identity")
 	} else if t.allowedTarget != nil || len(t.allowedTargets) > 0 {
-		if !scoped(ctx, pocketScope) { return nil, sealedOutput{}, errors.New("seal:existing scope is required") }
+		if strings.HasPrefix(clientFrom(ctx), "pocketid:") && !scoped(ctx, pocketScope) {
+			return nil, sealedOutput{}, errors.New("seal:existing scope is required")
+		}
 	}
 	live, err := t.kube.getSecret(ctx, in.Namespace, in.Name)
 	if errors.Is(err, errNotFound) {
