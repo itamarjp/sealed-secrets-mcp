@@ -181,3 +181,19 @@ func TestGenerate(t *testing.T) {
 		t.Error("accepted duplicate keys")
 	}
 }
+
+func TestPocketTargetAllowlist(t *testing.T) {
+	tl, _ := fakeCluster(t)
+	tl.allowedTarget = &target{Namespace: "apps", Name: "db"}
+	if _, _, err := tl.sealExisting(context.Background(), nil, target{Namespace: "apps", Name: "db"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, denied := range []target{
+		{Namespace: "apps", Name: "other"},
+		{Namespace: "other", Name: "db"},
+	} {
+		if _, _, err := tl.sealExisting(context.Background(), nil, denied); err == nil {
+			t.Errorf("accepted target outside allowlist: %+v", denied)
+		}
+	}
+}

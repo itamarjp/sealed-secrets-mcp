@@ -16,8 +16,9 @@ import (
 )
 
 type tools struct {
-	kube    *kube
-	certURL string
+	kube          *kube
+	certURL       string
+	allowedTarget *target // required for OAuth mode; nil in legacy JWT mode
 }
 
 type target struct {
@@ -73,6 +74,9 @@ func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in tar
 	defer func() { log(ctx, "seal_existing_secret", in, err) }()
 	if err = in.validate(); err != nil {
 		return nil, sealedOutput{}, err
+	}
+	if t.allowedTarget != nil && (in.Namespace != t.allowedTarget.Namespace || in.Name != t.allowedTarget.Name) {
+		return nil, sealedOutput{}, errors.New("target is not permitted for this OAuth identity")
 	}
 	live, err := t.kube.getSecret(ctx, in.Namespace, in.Name)
 	if errors.Is(err, errNotFound) {
