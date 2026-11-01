@@ -136,7 +136,13 @@ func serve() error {
 		mux.Handle("/.well-known/oauth-protected-resource", metadata)
 		mux.Handle("/.well-known/oauth-protected-resource/mcp", metadata)
 	}
-	mux.Handle("/mcp", auth.RequireBearerToken(verify, nil)(
+	var bearerOptions *auth.RequireBearerTokenOptions
+	if pocket != nil {
+		bearerOptions = &auth.RequireBearerTokenOptions{
+			ResourceMetadataURL: "https://" + "seal.ispbrasil.com.br/.well-known/oauth-protected-resource/mcp",
+		}
+	}
+	mux.Handle("/mcp", auth.RequireBearerToken(verify, bearerOptions)(
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
 			&mcp.StreamableHTTPOptions{Stateless: true})))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
