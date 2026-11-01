@@ -33,14 +33,6 @@ jobs:
       - run: go mod verify
       - name: go.mod and go.sum are tidy
         run: go mod tidy && git diff --exit-code go.mod go.sum
-      - name: Temporary formatted source output
-        run: |
-          for f in main.go tools.go hybrid.go hybrid_test.go; do
-            echo "BEGIN_$f"
-            gofmt "$f" | base64 -w0
-            echo
-            echo "END_$f"
-          done
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
