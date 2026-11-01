@@ -89,12 +89,16 @@ func serve() error {
 	switch mode {
 	case "jwt":
 		s, err := newSigner()
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		verify = s.verify
 	case "pocketid":
 		var err error
 		pocket, err = newPocketVerifier(os.Getenv("SEAL_POCKET_ID_ISSUER"), os.Getenv("SEAL_AUDIENCE"), os.Getenv("SEAL_POCKET_ID_SUB"))
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		verify = pocket.verify
 	default:
 		return fmt.Errorf("unknown SEAL_AUTH_MODE %q", mode)
