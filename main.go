@@ -109,6 +109,13 @@ func serve() error {
 	}
 	t := &tools{kube: k, certURL: env("SEAL_CERT_URL",
 		"http://sealed-secrets-controller.kube-system.svc:8080/v1/cert.pem")}
+	if pocket != nil {
+		target := &target{Namespace: os.Getenv("SEAL_POCKET_ID_TARGET_NAMESPACE"), Name: os.Getenv("SEAL_POCKET_ID_TARGET_NAME")}
+		if err := target.validate(); err != nil {
+			return fmt.Errorf("Pocket ID target must be configured: %w", err)
+		}
+		t.allowedTarget = target
+	}
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "sealed-secrets-mcp", Version: version}, nil)
 	t.register(server, mode != "pocketid")
