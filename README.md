@@ -13,7 +13,7 @@ The agent asks for a Secret, gets back a strict-scope `SealedSecret` resource as
   Random values are generated server-side.
 - **Read-only.** The server never creates, patches or deletes anything in the cluster. It only
   issues `GET` for single, named Secrets, and you choose which ones through RBAC.
-- **No accidental rotation.** `generate_sealed_secret` refuses when the Secret already exists.
+- **No accidental rotation.** `generate_sealed_secret` refuses when the Secret already exists. An optional, separately scoped OAuth `rotate_sealed_secret` operation only returns ciphertext for an explicit exact-name allowlist; it never changes the cluster.
 - **Short-lived tokens.** Clients authenticate with HS256 tokens that expire (24 h by default).
   Minting one requires the signing key, i.e. `kubectl exec` into the pod. Rotating the key
   revokes every token.
@@ -30,8 +30,9 @@ compatibility.
 | --- | --- |
 | `seal_existing_secret` | Reads a live Secret and returns it sealed, with the same values. Use it to move a manually created Secret into Git. |
 | `generate_sealed_secret` | Generates random values (`hex`, `base64url` or `alnum`) for the requested keys and returns them sealed. Fails if the Secret exists. |
+| `rotate_sealed_secret` | Optional OAuth `seal:rotate` scope, a separate per-Secret allowlist, and existing key names; generates and seals new values for the **same** Secret without changing the cluster. |
 
-Both return the `SealedSecret` resource as JSON, ready to save as YAML or JSON, plus a suggested
+Tools return the `SealedSecret` resource as JSON, ready to save as YAML or JSON, plus a suggested
 `file` name and `notes`. A note asks for the `sealedsecrets.bitnami.com/managed=true` annotation
 when an existing Secret has to be adopted by the controller. Example:
 
@@ -118,7 +119,7 @@ Grok (xAI API remote MCP tool): pass the URL as `server_url` and the token as `a
 claude.ai custom connectors support fixed request headers only as a beta for some organizations;
 OAuth is not implemented here.
 
-ChatGPT: see [integration and Pocket ID/OAuth requirements](docs/chatgpt.md). The included `plugin.json` and `mcp.json` declare Pocket ID OAuth for ChatGPT. The optional `SEAL_AUTH_MODE=pocketid` resource-server mode validates audience-bound Pocket ID access tokens and restricts tools; deployment requires Pocket ID API/CIMD configuration and an explicit allowed user subject.
+ChatGPT: see [integration and Pocket ID/OAuth requirements](docs/chatgpt.md). The included `plugin.json` and `mcp.json` declare Pocket ID OAuth for ChatGPT. The optional `SEAL_AUTH_MODE=pocketid` resource-server mode validates audience-bound Pocket ID access tokens and restricts tools; deployment requires Pocket ID API/CIMD configuration and an explicit allowed user subject. Credential rotation requires an additional `seal:rotate` API permission and `SEAL_POCKET_ID_ROTATE_TARGET_NAMES` exact target names; see [ChatGPT rotation procedure](docs/chatgpt.md#explicit-oauth-secret-rotation-opt-in).
 
 ## Development
 
