@@ -92,3 +92,24 @@ Unauthenticated MCP calls continue to require a bearer token.
 tools still work; authenticate through Pocket ID and verify only the named
 KingP2P Secret can be sealed and that `generate_sealed_secret` is denied.
 Do not revoke or regenerate the existing signing key.
+
+
+### Multiple exact Secret targets
+
+When the same OAuth user needs to seal multiple **existing** Secrets in one namespace,
+use `SEAL_POCKET_ID_TARGET_NAMES` instead of the single-target
+`SEAL_POCKET_ID_TARGET_NAME`:
+
+```yaml
+- name: SEAL_POCKET_ID_TARGET_NAMESPACE
+  value: kingp2p-test
+- name: SEAL_POCKET_ID_TARGET_NAMES
+  value: kingp2p-r2-pgbackrest,kingp2p-postgres-auth
+```
+
+Names are comma-separated and validated individually as Kubernetes Secret names.
+No wildcard, prefix or namespace escalation is supported. The legacy single-name
+setting remains compatible when `SEAL_POCKET_ID_TARGET_NAMES` is absent.
+Kubernetes RBAC must separately permit `get` on every exact Secret name.
+OAuth clients may call `seal_existing_secret` only; generation remains denied
+under `SEAL_AUTH_MODE=hybrid`. Do not expose a broader Role just to add a target.
