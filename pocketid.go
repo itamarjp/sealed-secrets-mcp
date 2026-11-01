@@ -19,6 +19,7 @@ import (
 )
 
 const pocketScope = "seal:existing"
+const rotateScope = "seal:rotate"
 
 // pocketVerifier validates resource-bound Pocket ID access tokens. The
 // Kubernetes Role still limits which single named Secrets may be read.
@@ -123,27 +124,28 @@ func (p *pocketVerifier) verify(ctx context.Context, raw string, _ *http.Request
 	if claims.Subject != p.allowedSub {
 		return nil, fmt.Errorf("%w: user not permitted", auth.ErrInvalidToken)
 	}
-	authorized := false
+	var validScopes []string
 	for _, scope := range strings.Fields(claims.Scope) {
-		if scope == pocketScope {
-			authorized = true
-			break
+		if scope == pocketScope || scope == rotateScope {
+			validScopes = append(validScopes, scope)
 		}
 	}
-	if !authorized {
+	if len(validScopes) == 0 {
 		return nil, fmt.Errorf("%w: missing required scope", auth.ErrInvalidToken)
 	}
-	return &auth.TokenInfo{UserID: claims.Subject, Expiration: claims.ExpiresAt.Time}, nil
+	return &auth.TokenInfo{UserID: claims.Subject, Scopes: validScopes, Expiration: claims.ExpiresAt.Time}, nil
 }
 
-func protectedResourceHandler(resource, issuer string) http.Handler {
+func protectedResourceHandler(resource, issuer string, rotationEnabled bool) http.Handler {
+	scopes := []string{pocketScope}
+	if rotationEnabled { scopes = append(scopes, rotateScope) }
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "public, max-age=300")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"resource":                 resource,
 			"authorization_servers":    []string{issuer},
-			"scopes_supported":         []string{pocketScope},
+			"scopes_supported":         scopes,
 			"bearer_methods_supported": []string{"header"},
 		})
 	})
