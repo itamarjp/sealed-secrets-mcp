@@ -101,6 +101,9 @@ func (p *pocketVerifier) verify(ctx context.Context, raw string, _ *http.Request
  if err != nil || !parsed.Valid {
   return nil, fmt.Errorf("%w: token rejected", auth.ErrInvalidToken)
  }
+ if typ, ok := parsed.Header["typ"].(string); !ok || (typ != "at+jwt" && typ != "application/at+jwt") {
+  return nil, fmt.Errorf("%w: not an access token", auth.ErrInvalidToken)
+ }
  if claims.Subject != p.allowedSub {
   return nil, fmt.Errorf("%w: user not permitted", auth.ErrInvalidToken)
  }
