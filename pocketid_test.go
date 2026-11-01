@@ -98,5 +98,7 @@ func TestPocketConfiguration(t *testing.T) {
 	}
 	w = httptest.NewRecorder()
 	protectedResourceHandler("https://seal.example.com/mcp", "https://id.example.com", true).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
-	if !strings.Contains(w.Body.String(), rotateScope) { t.Fatal("rotation scope not advertised when enabled") }
+	if !strings.Contains(w.Body.String(), rotateScope) {
+		t.Fatal("rotation scope not advertised when enabled")
+	}
 }
