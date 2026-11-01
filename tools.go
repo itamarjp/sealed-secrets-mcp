@@ -50,7 +50,7 @@ type generateInput struct {
 	Keys []keySpec `json:"keys" jsonschema:"keys to fill with random values"`
 }
 
-func (t *tools) register(s *mcp.Server) {
+func (t *tools) register(s *mcp.Server, allowGenerate bool) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "seal_existing_secret",
 		Description: "Read a Secret that already exists in the cluster and return it as a strict-scope " +
@@ -58,13 +58,15 @@ func (t *tools) register(s *mcp.Server) {
 			"without rotating it. Only ciphertext is returned.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, t.sealExisting)
-	mcp.AddTool(s, &mcp.Tool{
-		Name: "generate_sealed_secret",
-		Description: "Create a new credential: generate random values server-side and return them only as a " +
-			"strict-scope SealedSecret resource (JSON). Refuses if the Secret already exists in the cluster, so an " +
-			"existing credential is never rotated by accident. Nothing is written to the cluster.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, t.generate)
+	if allowGenerate {
+		mcp.AddTool(s, &mcp.Tool{
+			Name: "generate_sealed_secret",
+			Description: "Create a new credential: generate random values server-side and return them only as a " +
+				"strict-scope SealedSecret resource (JSON). Refuses if the Secret already exists in the cluster, so an " +
+				"existing credential is never rotated by accident. Nothing is written to the cluster.",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		}, t.generate)
+	}
 }
 
 func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in target) (_ *mcp.CallToolResult, _ sealedOutput, err error) {

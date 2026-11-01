@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "seal": {
+      "type": "streamable-http",
+      "url": "https://seal.ispbrasil.com.br/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "cimd"
+            },
+            "authorizationServerBase": "https://id.ispbrasil.com.br",
+            "resource": "https://seal.ispbrasil.com.br/mcp",
+            "baseScopes": [
+              "seal:existing"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
