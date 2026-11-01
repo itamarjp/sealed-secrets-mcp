@@ -14,7 +14,7 @@ func TestRotationDefaultDeny(t *testing.T) {
 	}
 	_, _, err := tool.rotate(context.Background(), nil, rotateInput{
 		target: target,
-		Keys: []keySpec{{Key: "PASSWORD", Encoding: "hex", Length: 32}},
+		Keys:   []keySpec{{Key: "PASSWORD", Encoding: "hex", Length: 32}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "OAuth") {
 		t.Fatalf("unverified rotation not refused: %v", err)
