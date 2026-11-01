@@ -1,52 +1,72 @@
-# ChatGPT integration
+# ChatGPT + Pocket ID OAuth (staged; no deployment)
 
-The server exposes **Streamable HTTP** at `https://seal.ispbrasil.com.br/mcp`. It currently uses **fixed short-lived bearer JWTs**, not OAuth.
+ChatGPT is an OAuth MCP client. Pocket ID is the authorization server and passkey identity provider. `sealed-secrets-mcp` is an OAuth-protected resource server, with the public URL `https://seal.ispbrasil.com.br/mcp`.
 
-## Important limitation
+The repo now supports two **exclusive** server authentication modes:
 
-The ChatGPT **Add custom MCP server** web form currently offers OAuth or no authentication; **it does not accept a fixed API-key/bearer token**. Do not select "No authentication" and do not remove bearer verification from `/mcp` to make tool scanning pass. That would grant callers remote access to any Kubernetes Secrets allowed by the service account.
+- `SEAL_AUTH_MODE=jwt` (default): existing short-lived server-minted HS256 bearer tokens, for CLI clients.
+- `SEAL_AUTH_MODE=pocketid`: validate Pocket ID's RS256 JWT **access tokens** using its JWKS, requiring an exact issuer, resource audience, scope `seal:existing`, expiry, and exact user `sub`.
 
-The included portable `plugin.json` + `mcp.json` describe the server and its `api_key` bearer authentication for plugin runtimes that support this mechanism. **Packaging is not a substitute for OAuth** and does not guarantee the ChatGPT web connector will install it.
+The Pocket ID mode exposes only `seal_existing_secret`. `generate_sealed_secret` is intentionally unavailable to ChatGPT. The cluster Role must independently restrict reads to the single approved Secret. No credential is embedded in the package.
 
-For current ChatGPT web connectivity, deploy an OAuth 2.1 authorization-code + PKCE integration in front of the MCP endpoint (or implement it in the server) with an identity provider, protected-resource metadata, issuer discovery, resource-bound access tokens, token validation and per-user authorization. Do not publish or deploy an unauthenticated fallback. See [OpenAI authentication guidance](https://developers.openai.com/plugins/build/auth) and [custom MCP setup](https://developers.openai.com/api/docs/guides/custom-mcp-server).
+## One-time Pocket ID administration
 
-## Pocket ID (recommended identity provider)
+**Do not create an OIDC client manually yet** if using CIMD. Pocket ID supports Client ID Metadata Documents (CIMD), which ChatGPT can use instead of a manually registered client, provided the instance supports this feature.
 
-Pocket ID can provide interactive user sign-in through OIDC; it does **not** automatically turn the current HS256 fixed-token endpoint into a ChatGPT-compatible OAuth resource server.
+1. Verify Pocket ID is recent enough for OAuth authorization-server discovery, API resources and CIMD support. Inspect `https://id.ispbrasil.com.br/.well-known/oauth-authorization-server` and its `client_id_metadata_document_supported` capability. Do not assume this is enabled on the running instance.
+2. Pocket ID → **Administration → APIs → Add API**:
+   - Name: `Sealed Secrets MCP`
+   - Resource: `https://seal.ispbrasil.com.br/mcp` (exact match to `SEAL_AUDIENCE`)
+   - Permission: `seal:existing` (user-delegated).
+3. Pocket ID → **Application Configuration → OIDC**: allowlist the **exact** ChatGPT CIMD URL advertised by the ChatGPT connection setup. The stable form is `https://chatgpt.com/oauth/client.json` when supported; ChatGPT may instead use a callback-specific metadata URL. Do not allow wildcard clients.
+4. Pocket ID → API access for **Metadata document clients**: allow only `seal:existing`. This setting covers every accepted CIMD client; keep the CIMD URL allowlist restricted.
+5. In the newly created OIDC client Access settings, restrict **Allowed User Groups** to a group containing only your account. Do not select All Users.
+6. Identify your **exact Pocket ID user subject (`sub`)** from the admin interface or a trusted local token inspection. Configure it as `SEAL_POCKET_ID_SUB`; never substitute email, username, or a guess.
+7. Confirm the API's resource-bound access tokens have `aud=https://seal.ispbrasil.com.br/mcp` and scope `seal:existing`. Do not use ID tokens.
 
-Before implementation, verify Pocket ID's **actual** capabilities and metadata at its public issuer URL:
+## MCP server settings for the Kubernetes deployment
 
-- OIDC discovery (`/.well-known/openid-configuration`), authorization and token endpoints;
-- authorization-code + PKCE S256, refresh tokens / `offline_access`;
-- whether the ChatGPT callback can be registered as a redirect URI;
-- token issuer, `aud`, signature/JWKS and a safe way to identify the user;
-- whether client registration is static only; if so, provision the ChatGPT OAuth client explicitly.
-
-The MCP side must additionally expose OAuth protected-resource metadata and a standards-compliant bearer challenge, validate an **access** token scoped to this MCP resource (not merely any Pocket ID login token), and enforce a server-side allowlist mapping user identities to target Secret names. If Pocket ID does not issue resource-audience access tokens suitable for the MCP, use an OAuth authorization-server bridge that exchanges Pocket ID login for its own MCP-specific access tokens.
-
-**Do not** map every successfully authenticated Pocket ID user to the Kubernetes service account's entire Secret read permission. Initially allow only the approved user and the KingP2P test Secret. Keep the existing CLI JWT path working separately during migration, with an explicit authentication mode and regression tests.
-
-Required deployment information (not secrets): the public Pocket ID issuer URL, configured OAuth client ID, redirect URI support, and intended authorized user identities. Store any OAuth client secret only in Kubernetes Sealed Secrets.
-
-## Existing compatible clients (fixed bearer)
-
-Generate a scoped token from the running pod. **Never paste tokens into chat, commit them or put them in issue/PR logs.**
-
-```sh
-kubectl -n sealed-secrets-mcp exec deployment/sealed-secrets-mcp -- \
-  sealed-secrets-mcp token --client codex --ttl 2h
+```yaml
+env:
+  - name: SEAL_AUTH_MODE
+    value: pocketid
+  - name: SEAL_AUDIENCE
+    value: https://seal.ispbrasil.com.br/mcp
+  - name: SEAL_POCKET_ID_ISSUER
+    value: https://id.ispbrasil.com.br
+  - name: SEAL_POCKET_ID_SUB
+    value: "REPLACE_WITH_EXACT_POCKET_ID_SUB"
 ```
 
-Use the token only in the client application's private credential store. For Codex CLI, use `bearer_token_env_var` as described in the README. The portable plugin's `mcp.json` intentionally contains **no credentials**.
+The OAuth mode does not require `SEAL_SIGNING_KEY_FILE`. Do not deploy until the real sub is configured through reviewed GitOps configuration. Do not commit access tokens, R2 credentials, or the contents of any Kubernetes Secret.
 
-## KingP2P verification checklist
+## ChatGPT connection
 
-1. Confirm the server HTTPS endpoint is reachable and its certificate is valid.
-2. Confirm the Kubernetes Role grants `get` on **only** the named `kingp2p-test/kingp2p-r2-pgbackrest` Secret.
-3. Confirm unauthenticated `/mcp` requests return HTTP 401, and `/healthz` / `/readyz` are not exposed externally.
-4. Authenticate through a supported OAuth integration before using ChatGPT web.
-5. Call `seal_existing_secret` with `{"namespace":"kingp2p-test","name":"kingp2p-r2-pgbackrest"}`.
-6. Confirm the returned `SealedSecret` is strict-scope and contains `encryptedData`, never `data`, `stringData` or plaintext.
-7. Commit only ciphertext to the GitOps PR, with human review; don't enable deployment or automatic merge.
+The portable `plugin.json` and `mcp.json` declare the MCP server and Pocket ID OAuth authorization through CIMD. In ChatGPT → Plugins → Add custom MCP server, use the HTTPS URL above and OAuth authentication; inspect the offered callback/CIMD URL and configure the exact URL in Pocket ID. ChatGPT must request scope `seal:existing` and resource `https://seal.ispbrasil.com.br/mcp`.
 
-The MCP server itself is read-only. It does not create or deploy Kubernetes objects.
+The MCP server advertises RFC 9728 protected-resource metadata at:
+
+- `https://seal.ispbrasil.com.br/.well-known/oauth-protected-resource/mcp`
+- `https://seal.ispbrasil.com.br/.well-known/oauth-protected-resource`
+
+The ingress must route those paths to the service. Verify the unauthorized MCP response includes a standards-compliant Bearer challenge and links to the resource metadata during end-to-end testing.
+
+## KingP2P security checks
+
+1. Kubernetes RBAC: read-only `get` with `resourceNames: [kingp2p-r2-pgbackrest]` in namespace `kingp2p-test`, and no broader Secret permission.
+2. Invalid signature, wrong issuer/audience, missing scope, wrong user `sub`, expired token and ID tokens are all rejected.
+3. Only `seal_existing_secret` appears in the authenticated ChatGPT tool listing.
+4. Tool call `{"namespace":"kingp2p-test","name":"kingp2p-r2-pgbackrest"}` returns only strict-scope ciphertext.
+5. Never commit plaintext or permit auto-deploy. Review the returned SealedSecret before adding it to the GitOps PR.
+6. Test an unauthorized account to ensure it cannot authorize the client or call the resource server.
+
+## Existing CLI clients
+
+The default `jwt` mode and `token` subcommand remain for CLI integrations. Never paste the resulting bearer token into conversations. The ChatGPT OAuth mode and JWT mode should not be combined on a single endpoint.
+
+## References
+
+- [Pocket ID: APIs and permissions](https://pocket-id.org/docs/guides/apis)
+- [Pocket ID: Client ID Metadata Documents](https://pocket-id.org/docs/guides/client-id-metadata-documents)
+- [OpenAI: Plugin OAuth](https://developers.openai.com/plugins/build/auth)
+- [OpenAI: Connecting custom MCP servers](https://developers.openai.com/api/docs/guides/custom-mcp-server)
