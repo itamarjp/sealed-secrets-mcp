@@ -102,6 +102,7 @@ func serve() error {
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
 			&mcp.StreamableHTTPOptions{Stateless: true})))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("/readyz", readinessHandler(k, t.certURL))
 
 	srv := &http.Server{
 		Addr:              env("SEAL_LISTEN", ":8080"),

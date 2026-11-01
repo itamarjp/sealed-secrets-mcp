@@ -61,7 +61,7 @@ reports the error on the SealedSecret.
 | `SEAL_SIGNING_KEY_FILE` | `/etc/sealed-secrets-mcp/signing-key` | HMAC key, at least 32 bytes. |
 | `SEAL_MAX_TTL` | `24h` | Longest token lifetime accepted. |
 | `SEAL_CERT_URL` | `http://sealed-secrets-controller.kube-system.svc:8080/v1/cert.pem` | Controller public certificate. |
-| `SEAL_LISTEN` | `:8080` | Listen address. `/mcp` is the endpoint, `/healthz` the probe. |
+| `SEAL_LISTEN` | `:8080` | Listen address. `/mcp` is the endpoint; `/healthz` is the process liveness probe and `/readyz` checks Kubernetes API connectivity and the controller certificate. |
 | `SEAL_KUBE_API` | in-cluster | API URL for local runs, e.g. `kubectl proxy` at `http://127.0.0.1:8001`. |
 
 ## Deploy
@@ -75,7 +75,9 @@ kubectl -n sealed-secrets-mcp create secret generic sealed-secrets-mcp \
 ```
 
 Restrict the `Role`/`ClusterRole` with `resourceNames` to the Secrets agents may read.
-Expose `/mcp` through your ingress with TLS.
+Expose `/mcp` through your ingress with TLS. Keep `/healthz` and `/readyz` internal to the cluster.
+
+The example Deployment uses `/healthz` for liveness and `/readyz` for readiness. `/readyz` returns 200 only when the Kubernetes API `/version` endpoint is reachable and the Sealed Secrets controller publishes a parseable, currently valid RSA certificate; otherwise it returns 503. The service account needs access to the non-resource URL `/version` if your cluster does not grant that access by default. Readiness does not require permission to list Secrets. Certificate rotation can cause transient 503 responses; probes retry automatically.
 
 ## Tokens
 
