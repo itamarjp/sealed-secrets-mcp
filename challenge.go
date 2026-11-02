@@ -6,6 +6,26 @@ import (
 	"strings"
 )
 
+// challengeScope picks the scope named in the 401 challenge. By default
+// OAuth clients ask for the read scope only, because rotation is a separate
+// opt-in grant and Pocket ID refuses the whole request if a client lacks any
+// requested permission. SEAL_POCKET_ID_CHALLENGE_ROTATE=true also asks for
+// seal:rotate; use it only when every OAuth client of this resource has been
+// granted both scopes in Pocket ID. It requires rotation targets.
+func challengeScope(rotationEnabled bool, optIn string) (string, error) {
+	switch strings.TrimSpace(optIn) {
+	case "", "false":
+		return pocketScope, nil
+	case "true":
+		if !rotationEnabled {
+			return "", fmt.Errorf("SEAL_POCKET_ID_CHALLENGE_ROTATE=true requires SEAL_POCKET_ID_ROTATE_TARGET_NAMES")
+		}
+		return pocketScope + " " + rotateScope, nil
+	default:
+		return "", fmt.Errorf("SEAL_POCKET_ID_CHALLENGE_ROTATE must be true or false, got %q", optIn)
+	}
+}
+
 // oauthChallenge makes the 401 Bearer challenge on /mcp tell OAuth clients
 // exactly which scope to request (RFC 6750 §3, MCP authorization spec "scope
 // selection strategy").

@@ -52,3 +52,25 @@ func TestOAuthChallengeAdvertisesReadScope(t *testing.T) {
 		}
 	}
 }
+
+func TestChallengeScope(t *testing.T) {
+	cases := []struct {
+		rotation bool
+		optIn    string
+		want     string
+		wantErr  bool
+	}{
+		{false, "", "seal:existing", false},
+		{true, "", "seal:existing", false},
+		{true, "false", "seal:existing", false},
+		{true, "true", "seal:existing seal:rotate", false},
+		{false, "true", "", true},
+		{true, "yes", "", true},
+	}
+	for _, c := range cases {
+		got, err := challengeScope(c.rotation, c.optIn)
+		if (err != nil) != c.wantErr || got != c.want {
+			t.Errorf("challengeScope(%v, %q) = %q, %v; want %q, err=%v", c.rotation, c.optIn, got, err, c.want, c.wantErr)
+		}
+	}
+}
