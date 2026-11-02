@@ -181,9 +181,14 @@ func serve() error {
 			ResourceMetadataURL: resourceURL.Scheme + "://" + resourceURL.Host + "/.well-known/oauth-protected-resource" + resourceURL.EscapedPath(),
 		}
 	}
-	mux.Handle("/mcp", auth.RequireBearerToken(verify, bearerOptions)(
+	var mcpHandler http.Handler = auth.RequireBearerToken(verify, bearerOptions)(
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
-			&mcp.StreamableHTTPOptions{Stateless: true})))
+			&mcp.StreamableHTTPOptions{Stateless: true}))
+	if bearerOptions != nil {
+		// Ask OAuth clients for the read scope only; rotation is a separate opt-in grant.
+		mcpHandler = oauthChallenge(bearerOptions.ResourceMetadataURL, pocketScope)(mcpHandler)
+	}
+	mux.Handle("/mcp", mcpHandler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("/readyz", readinessHandler(k, t.certURL))
 
