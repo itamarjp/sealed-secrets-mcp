@@ -5,18 +5,37 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  # Weekly run so a new Go release or a new vulnerability shows up as a red
+  # run even when nobody pushes. It never builds or pushes the image.
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A new push to a pull request cancels its older, now irrelevant run.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   KUBESEAL_VERSION: 0.40.0
+  STATICCHECK_VERSION: 2026.2.2
+  GOVULNCHECK_VERSION: v1.9.0
+  # Statement coverage below this fails CI. Raise it as tests are added.
+  MIN_COVERAGE: "80"
+  # Use the toolchain setup-go installed; never download another one.
+  GOTOOLCHAIN: local
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -42,19 +61,84 @@ jobs:
             exit 1
           fi
       - run: go vet ./...
-      - run: go test -race ./...
+      - name: staticcheck
+        run: go run "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}" ./...
+      - name: Test (race detector, shuffled order, coverage)
+        run: go test -race -count=1 -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Coverage
+        run: |
+          set -eu
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ { sub("%", "", $3); print $3 }')"
+          {
+            echo "### Go coverage: ${total}% (minimum ${MIN_COVERAGE}%)"
+            echo
+            echo '<details><summary>Per function</summary>'
+            echo
+            echo '```'
+            go tool cover -func=coverage.out
+            echo '```'
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if awk -v t="$total" -v m="$MIN_COVERAGE" 'BEGIN { exit !(t < m) }'; then
+            echo "::error::Coverage ${total}% is below the ${MIN_COVERAGE}% minimum"
+            exit 1
+          fi
+          echo "Coverage ${total}%"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Binary builds and reports its version
+        run: |
+          set -eu
+          go build -trimpath -ldflags="-X main.version=ci-${GITHUB_SHA}" -o "$RUNNER_TEMP/sealed-secrets-mcp" .
+          test "$("$RUNNER_TEMP/sealed-secrets-mcp" version)" = "ci-${GITHUB_SHA}"
 
-  image:
-    needs: test
-    if: github.event_name == 'push'
+  # Policy (AGENTS.md): always build with the latest stable Go. Fails when
+  # go.mod or the Dockerfile builder lags behind go.dev's newest release.
+  go-version:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: bash .github/scripts/check-latest-go.sh
+
+  vulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # Reports only vulnerabilities in code this module actually calls,
+      # including the Go standard library.
+      - run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
+
+  # Pull requests build the image too (without pushing) so a broken
+  # Dockerfile is caught before merge, not after.
+  image:
+    needs: [test, go-version]
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
+        if: github.event_name == 'push'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -69,7 +153,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
       - uses: docker/build-push-action@v7
         with:
-          push: true
+          push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ github.ref_name }}
