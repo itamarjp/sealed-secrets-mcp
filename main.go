@@ -185,8 +185,11 @@ func serve() error {
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
 			&mcp.StreamableHTTPOptions{Stateless: true}))
 	if bearerOptions != nil {
-		// Ask OAuth clients for the read scope only; rotation is a separate opt-in grant.
-		mcpHandler = oauthChallenge(bearerOptions.ResourceMetadataURL, pocketScope)(mcpHandler)
+		scope, err := challengeScope(len(t.rotateTargets) > 0, os.Getenv("SEAL_POCKET_ID_CHALLENGE_ROTATE"))
+		if err != nil {
+			return err
+		}
+		mcpHandler = oauthChallenge(bearerOptions.ResourceMetadataURL, scope)(mcpHandler)
 	}
 	mux.Handle("/mcp", mcpHandler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })

@@ -132,6 +132,12 @@ The 401 challenge on `/mcp` names `scope="seal:existing"`, so clients ask only f
 scope; a client without the `seal:rotate` grant would otherwise be refused by Pocket ID with
 `invalid_scope`.
 
+To use `rotate_sealed_secret` from claude.ai, grant `seal:rotate` to the client in Pocket ID,
+set `SEAL_POCKET_ID_CHALLENGE_ROTATE=true` (requires `SEAL_POCKET_ID_ROTATE_TARGET_NAMES`) so the
+challenge names `scope="seal:existing seal:rotate"`, then reconnect the connector to get a new
+token. Enable it only when **every** OAuth client of this resource holds both grants, otherwise
+Pocket ID refuses that client's sign-in with `invalid_scope`.
+
 ChatGPT: see [integration and Pocket ID/OAuth requirements](docs/chatgpt.md). The included `plugin.json` and `mcp.json` declare Pocket ID OAuth for ChatGPT. The optional `SEAL_AUTH_MODE=pocketid` resource-server mode validates audience-bound Pocket ID access tokens and restricts tools; deployment requires Pocket ID API/CIMD configuration and an explicit allowed user subject. Credential rotation requires an additional `seal:rotate` API permission and `SEAL_POCKET_ID_ROTATE_TARGET_NAMES` exact target names; see [ChatGPT rotation procedure](docs/chatgpt.md#explicit-oauth-secret-rotation-opt-in).
 
 ## Development
