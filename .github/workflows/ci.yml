@@ -5,6 +5,11 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  # Weekly run so a new Go release or a new vulnerability shows up as a red
+  # run even when nobody pushes. It never builds or pushes the image.
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -92,6 +97,17 @@ jobs:
           go build -trimpath -ldflags="-X main.version=ci-${GITHUB_SHA}" -o "$RUNNER_TEMP/sealed-secrets-mcp" .
           test "$("$RUNNER_TEMP/sealed-secrets-mcp" version)" = "ci-${GITHUB_SHA}"
 
+  # Policy (AGENTS.md): always build with the latest stable Go. Fails when
+  # go.mod or the Dockerfile builder lags behind go.dev's newest release.
+  go-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: bash .github/scripts/check-latest-go.sh
+
   vulncheck:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -109,7 +125,8 @@ jobs:
   # Pull requests build the image too (without pushing) so a broken
   # Dockerfile is caught before merge, not after.
   image:
-    needs: test
+    needs: [test, go-version]
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
