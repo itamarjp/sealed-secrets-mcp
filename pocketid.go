@@ -74,7 +74,7 @@ func (p *pocketVerifier) publicKey(ctx context.Context, kid string) (*rsa.Public
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Pocket ID JWKS status %d", resp.StatusCode)
+		return nil, fmt.Errorf("fetching Pocket ID JWKS: status %d", resp.StatusCode)
 	}
 	var keys pocketJWKS
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 65536)).Decode(&keys); err != nil {
