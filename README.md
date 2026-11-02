@@ -116,8 +116,21 @@ Cursor (`.cursor/mcp.json`):
 
 Grok (xAI API remote MCP tool): pass the URL as `server_url` and the token as `authorization`.
 
-claude.ai custom connectors support fixed request headers only as a beta for some organizations;
-OAuth is not implemented here.
+claude.ai (custom connector, OAuth through Pocket ID, needs `SEAL_AUTH_MODE=hybrid` or `pocketid`):
+
+1. Pocket ID: create an OIDC client named `Claude` with callback URL
+   `https://claude.ai/api/mcp/auth_callback`, restrict it to a group that holds only your user,
+   and under **APIs** grant it `seal:existing` on the `https://seal.example.com/mcp` resource
+   (`seal:rotate` too only if you want rotation from Claude). Pocket ID has no dynamic client
+   registration, so this manual client is required.
+2. claude.ai → Settings → Connectors → **Add custom connector**: URL `https://seal.example.com/mcp`;
+   open **Advanced settings** and paste the Pocket ID Client ID and Client Secret.
+3. Connect and sign in with your passkey. Only `seal_existing_secret` (and `rotate_sealed_secret`
+   if granted) appears, limited to `SEAL_POCKET_ID_TARGET_NAMES`.
+
+The 401 challenge on `/mcp` names `scope="seal:existing"`, so clients ask only for the read
+scope; a client without the `seal:rotate` grant would otherwise be refused by Pocket ID with
+`invalid_scope`.
 
 ChatGPT: see [integration and Pocket ID/OAuth requirements](docs/chatgpt.md). The included `plugin.json` and `mcp.json` declare Pocket ID OAuth for ChatGPT. The optional `SEAL_AUTH_MODE=pocketid` resource-server mode validates audience-bound Pocket ID access tokens and restricts tools; deployment requires Pocket ID API/CIMD configuration and an explicit allowed user subject. Credential rotation requires an additional `seal:rotate` API permission and `SEAL_POCKET_ID_ROTATE_TARGET_NAMES` exact target names; see [ChatGPT rotation procedure](docs/chatgpt.md#explicit-oauth-secret-rotation-opt-in).
 
