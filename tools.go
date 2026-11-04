@@ -46,7 +46,7 @@ type sealedOutput struct {
 type keySpec struct {
 	Key      string `json:"key" jsonschema:"data key, e.g. PASSWORD"`
 	Length   int    `json:"length,omitempty" jsonschema:"random bytes for hex/base64, characters for alnum; default 32"`
-	Encoding string `json:"encoding,omitempty" jsonschema:"hex (default), base64url or alnum"`
+	Encoding string `json:"encoding,omitempty" jsonschema:"hex (default), base64 (standard, padded), base64url or alnum"`
 }
 
 type generateInput struct {
@@ -299,12 +299,17 @@ func randomValue(k keySpec) ([]byte, error) {
 		return nil, fmt.Errorf("key %q: length must be between 16 and 256", k.Key)
 	}
 	switch k.Encoding {
-	case "", "hex", "base64url":
+	case "", "hex", "base64", "base64url":
 		b := make([]byte, n)
 		if _, err := rand.Read(b); err != nil {
 			return nil, err
 		}
-		if k.Encoding == "base64url" {
+		switch k.Encoding {
+		case "base64":
+			// Standard, padded alphabet (RFC 4648 section 4), as Go's
+			// base64.StdEncoding.Strict() and openssl rand -base64 expect.
+			return []byte(base64.StdEncoding.EncodeToString(b)), nil
+		case "base64url":
 			return []byte(base64.RawURLEncoding.EncodeToString(b)), nil
 		}
 		return []byte(hex.EncodeToString(b)), nil
