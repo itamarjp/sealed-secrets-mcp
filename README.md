@@ -29,7 +29,7 @@ compatibility.
 | Tool | What it does |
 | --- | --- |
 | `seal_existing_secret` | Reads a live Secret and returns it sealed, with the same values. Use it to move a manually created Secret into Git. |
-| `generate_sealed_secret` | Generates random values (`hex`, `base64url` or `alnum`) for the requested keys and returns them sealed. Fails if the Secret exists. |
+| `generate_sealed_secret` | Generates random values (`hex`, standard padded `base64`, `base64url` or `alnum`) for the requested keys and returns them sealed. Fails if the Secret exists. |
 | `rotate_sealed_secret` | Optional OAuth `seal:rotate` scope, a separate per-Secret allowlist, and existing key names; generates and seals new values for the **same** Secret without changing the cluster. |
 
 Tools return the `SealedSecret` resource as JSON, ready to save as YAML or JSON, plus a suggested

@@ -295,6 +295,17 @@ func TestGenerateRefusesWhenExistenceUnknown(t *testing.T) {
 	wantErr(t, err, "cannot confirm the Secret is new")
 }
 
+func TestRandomValueStandardBase64DecodesStrictly(t *testing.T) {
+	v, err := randomValue(keySpec{Key: "KEY", Encoding: "base64", Length: 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := base64.StdEncoding.Strict().DecodeString(string(v))
+	if err != nil || len(b) != 32 {
+		t.Fatalf("standard base64 value does not decode to 32 bytes (len %d, err %v)", len(b), err)
+	}
+}
+
 func TestRandomValue(t *testing.T) {
 	cases := []struct {
 		spec    keySpec
@@ -302,6 +313,8 @@ func TestRandomValue(t *testing.T) {
 	}{
 		{keySpec{Key: "a"}, `^[0-9a-f]{64}$`},
 		{keySpec{Key: "a", Encoding: "hex", Length: 16}, `^[0-9a-f]{32}$`},
+		{keySpec{Key: "a", Encoding: "base64", Length: 32}, `^[A-Za-z0-9+/]{43}=$`},
+		{keySpec{Key: "a", Encoding: "base64", Length: 30}, `^[A-Za-z0-9+/]{40}$`},
 		{keySpec{Key: "a", Encoding: "base64url", Length: 30}, `^[A-Za-z0-9_-]{40}$`},
 		{keySpec{Key: "a", Encoding: "alnum", Length: 256}, `^[A-Za-z0-9]{256}$`},
 	}
