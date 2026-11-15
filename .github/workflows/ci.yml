@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  KUBESEAL_VERSION: 0.40.0
+  KUBESEAL_VERSION: 0.41.2
   STATICCHECK_VERSION: 2026.2.2
   GOVULNCHECK_VERSION: v1.9.0
   # Statement coverage below this fails CI. Raise it as tests are added.
