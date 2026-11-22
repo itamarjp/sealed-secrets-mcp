@@ -51,6 +51,29 @@ func TestParseTargets(t *testing.T) {
 	}
 }
 
+func TestParseGenerateTargets(t *testing.T) {
+	got, err := parseGenerateTargets(" default/n8n-runners , apps/x")
+	if err != nil || !slices.Equal(got, []target{{"default", "n8n-runners"}, {"apps", "x"}}) {
+		t.Fatalf("parseGenerateTargets = %v, %v", got, err)
+	}
+	if got, err := parseGenerateTargets("  "); got != nil || err != nil {
+		t.Errorf("empty list = %v, %v; generation must stay disabled", got, err)
+	}
+	for list, want := range map[string]string{
+		"n8n-runners": "want namespace/name",
+		"default/":    "want namespace/name",
+		"/x":          "want namespace/name",
+		"Default/x":   "want namespace/name",
+		"a/b,":        "want namespace/name",
+		"a/b/c":       "want namespace/name",
+		"a/b, a/b":    "duplicate OAuth generate target",
+	} {
+		if _, err := parseGenerateTargets(list); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("parseGenerateTargets(%q) = %v, want %q", list, err, want)
+		}
+	}
+}
+
 // testEnv returns a getenv for newApp backed by a map, with a valid signing
 // key file and the given fake cluster.
 func testEnv(t *testing.T, kubeURL string, vars map[string]string) func(string) string {
@@ -103,6 +126,10 @@ func TestNewAppConfigurationErrors(t *testing.T) {
 		"challenge bad value":  with(map[string]string{"SEAL_POCKET_ID_CHALLENGE_ROTATE": "1"}),
 		"hybrid without key":   with(map[string]string{"SEAL_SIGNING_KEY_FILE": "/nonexistent"}),
 		"pocketid bad targets": with(map[string]string{"SEAL_AUTH_MODE": "pocketid", "SEAL_POCKET_ID_TARGET_NAMES": "a,a"}),
+		"generate bad target":  with(map[string]string{"SEAL_POCKET_ID_ROTATE_TARGET_NAMES": "db", "SEAL_POCKET_ID_GENERATE_TARGETS": "default"}),
+		"generate no rotate":   with(map[string]string{"SEAL_POCKET_ID_GENERATE_TARGETS": "default/n8n-runners"}),
+		"generate pocketid": with(map[string]string{"SEAL_AUTH_MODE": "pocketid", "SEAL_POCKET_ID_ROTATE_TARGET_NAMES": "db",
+			"SEAL_POCKET_ID_GENERATE_TARGETS": "default/n8n-runners"}),
 	}
 	for name, vars := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -286,6 +313,7 @@ func TestServeHybridMode(t *testing.T) {
 		"SEAL_POCKET_ID_TARGET_NAMESPACE":    "apps",
 		"SEAL_POCKET_ID_TARGET_NAMES":        "db,r2",
 		"SEAL_POCKET_ID_ROTATE_TARGET_NAMES": "r2",
+		"SEAL_POCKET_ID_GENERATE_TARGETS":    "apps/fresh,apps/db",
 	})
 	a, err := newApp(getenv)
 	if err != nil {
@@ -370,6 +398,29 @@ func TestServeHybridMode(t *testing.T) {
 	if _, errMsg := callTool(t, rotator, "rotate_sealed_secret", map[string]any{
 		"namespace": "apps", "name": "db", "keys": []map[string]any{{"key": "PASSWORD"}}}); !strings.Contains(errMsg, "not permitted for OAuth rotation") {
 		t.Errorf("rotated a read-only target: %q", errMsg)
+	}
+
+	// OAuth generation: only SEAL_POCKET_ID_GENERATE_TARGETS, only with seal:rotate,
+	// and never over an existing Secret.
+	if _, errMsg := callTool(t, reader, "generate_sealed_secret", map[string]any{
+		"namespace": "apps", "name": "fresh", "keys": []map[string]any{{"key": "K"}}}); !strings.Contains(errMsg, "seal:rotate") {
+		t.Errorf("OAuth generate without seal:rotate: %q", errMsg)
+	}
+	out, errMsg = callTool(t, rotator, "generate_sealed_secret", map[string]any{
+		"namespace": "apps", "name": "fresh", "keys": []map[string]any{{"key": "AUTH_TOKEN", "length": 32}}})
+	if errMsg != "" {
+		t.Fatal(errMsg)
+	}
+	if v := decrypt(t, priv, out, "AUTH_TOKEN"); len(v) != 64 {
+		t.Errorf("generated AUTH_TOKEN has %d hex chars, want 64", len(v))
+	}
+	if _, errMsg := callTool(t, rotator, "generate_sealed_secret", map[string]any{
+		"namespace": "apps", "name": "db", "keys": []map[string]any{{"key": "K"}}}); !strings.Contains(errMsg, "already exists") {
+		t.Errorf("OAuth generate over an existing Secret: %q", errMsg)
+	}
+	if _, errMsg := callTool(t, rotator, "generate_sealed_secret", map[string]any{
+		"namespace": "other", "name": "fresh", "keys": []map[string]any{{"key": "K"}}}); !strings.Contains(errMsg, "not permitted for OAuth") {
+		t.Errorf("OAuth generate outside allowlist: %q", errMsg)
 	}
 
 	// Another Pocket ID user is rejected at the HTTP layer.

@@ -74,6 +74,12 @@ func newApp(getenv func(string) string) (*app, error) {
 			return nil, err
 		}
 		t.hybrid = mode == "hybrid"
+		if t.generateTargets, err = parseGenerateTargets(getenv("SEAL_POCKET_ID_GENERATE_TARGETS")); err != nil {
+			return nil, err
+		}
+		if len(t.generateTargets) > 0 && (!t.hybrid || len(t.rotateTargets) == 0) {
+			return nil, fmt.Errorf("SEAL_POCKET_ID_GENERATE_TARGETS requires SEAL_AUTH_MODE=hybrid and SEAL_POCKET_ID_ROTATE_TARGET_NAMES (seal:rotate)")
+		}
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "sealed-secrets-mcp", Version: version}, nil)
@@ -145,6 +151,30 @@ func parseTargets(namespace, names, rotateNames string) (allowed, rotate []targe
 		rotate = append(rotate, tg)
 	}
 	return allowed, rotate, nil
+}
+
+// parseGenerateTargets reads the comma-separated namespace/name pairs that
+// OAuth identities may create with generate_sealed_secret. Empty means none:
+// by default OAuth clients can never generate credentials.
+func parseGenerateTargets(list string) ([]target, error) {
+	if strings.TrimSpace(list) == "" {
+		return nil, nil
+	}
+	var out []target
+	seen := make(map[target]bool)
+	for _, part := range strings.Split(list, ",") {
+		ns, name, ok := strings.Cut(strings.TrimSpace(part), "/")
+		tg := target{Namespace: ns, Name: name}
+		if !ok || tg.validate() != nil {
+			return nil, fmt.Errorf("invalid OAuth generate target %q: want namespace/name", strings.TrimSpace(part))
+		}
+		if seen[tg] {
+			return nil, fmt.Errorf("duplicate OAuth generate target %q", strings.TrimSpace(part))
+		}
+		seen[tg] = true
+		out = append(out, tg)
+	}
+	return out, nil
 }
 
 func signerFromEnv(getenv func(string) string) (*signer, error) {

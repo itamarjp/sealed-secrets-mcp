@@ -22,7 +22,10 @@ type tools struct {
 	allowedTarget  *target
 	allowedTargets []target
 	rotateTargets  []target
-	hybrid         bool
+	// generateTargets lists the exact namespace/name pairs an OAuth identity
+	// with seal:rotate may create with generate_sealed_secret (hybrid only).
+	generateTargets []target
+	hybrid          bool
 }
 
 type target struct {
@@ -77,6 +80,15 @@ func scoped(ctx context.Context, scope string) bool {
 
 func (t *tools) rotateAllowed(in target) bool {
 	for _, allowed := range t.rotateTargets {
+		if allowed == in {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *tools) generateAllowed(in target) bool {
+	for _, allowed := range t.generateTargets {
 		if allowed == in {
 			return true
 		}
@@ -183,11 +195,21 @@ func (t *tools) sealExisting(ctx context.Context, _ *mcp.CallToolRequest, in tar
 
 func (t *tools) generate(ctx context.Context, _ *mcp.CallToolRequest, in generateInput) (_ *mcp.CallToolResult, _ sealedOutput, err error) {
 	defer func() { log(ctx, "generate_sealed_secret", in.target, err) }()
-	if t.hybrid && !strings.HasPrefix(clientFrom(ctx), "jwt:") {
-		return nil, sealedOutput{}, errors.New("credential generation is not permitted for OAuth clients")
-	}
 	if err = in.validate(); err != nil {
 		return nil, sealedOutput{}, err
+	}
+	if t.hybrid {
+		identity := clientFrom(ctx)
+		switch {
+		case strings.HasPrefix(identity, "jwt:"):
+		case strings.HasPrefix(identity, "pocketid:") && t.generateAllowed(in.target):
+			// Creating a credential is a step-up action like rotation.
+			if !scoped(ctx, rotateScope) {
+				return nil, sealedOutput{}, errors.New("OAuth seal:rotate scope is required to generate")
+			}
+		default:
+			return nil, sealedOutput{}, errors.New("credential generation is not permitted for OAuth clients outside SEAL_POCKET_ID_GENERATE_TARGETS")
+		}
 	}
 	if len(in.Keys) == 0 {
 		return nil, sealedOutput{}, errors.New("at least one key is required")

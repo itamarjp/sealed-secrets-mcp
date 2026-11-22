@@ -283,6 +283,32 @@ func TestGenerateAuthorizationAndValidation(t *testing.T) {
 	}
 }
 
+func TestGenerateOAuthAllowlist(t *testing.T) {
+	tl, priv, _ := clusterWith(t, map[string]string{"apps/db": dbSecret})
+	tl.hybrid = true
+	fresh := target{Namespace: "apps", Name: "fresh"}
+	tl.generateTargets = []target{fresh, {Namespace: "apps", Name: "db"}}
+	in := generateInput{target: fresh, Keys: []keySpec{{Key: "AUTH_TOKEN"}}}
+
+	_, out, err := tl.generate(withIdentity(t, "pocketid:alice", pocketScope, rotateScope), nil, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := decrypt(t, priv, out, "AUTH_TOKEN"); len(v) != 64 {
+		t.Errorf("AUTH_TOKEN = %d chars", len(v))
+	}
+	_, _, err = tl.generate(withIdentity(t, "pocketid:alice", pocketScope), nil, in)
+	wantErr(t, err, "seal:rotate scope is required")
+	_, _, err = tl.generate(withIdentity(t, "pocketid:alice", pocketScope, rotateScope), nil,
+		generateInput{target: target{Namespace: "apps", Name: "other"}, Keys: []keySpec{{Key: "K"}}})
+	wantErr(t, err, "not permitted for OAuth clients")
+	_, _, err = tl.generate(withIdentity(t, "pocketid:alice", pocketScope, rotateScope), nil,
+		generateInput{target: target{Namespace: "apps", Name: "db"}, Keys: []keySpec{{Key: "K"}}})
+	wantErr(t, err, "already exists")
+	_, _, err = tl.generate(withIdentity(t, "mystery", pocketScope, rotateScope), nil, in)
+	wantErr(t, err, "not permitted for OAuth clients")
+}
+
 func TestGenerateRefusesWhenExistenceUnknown(t *testing.T) {
 	tl, _, _ := clusterWith(t, nil)
 	mux := http.NewServeMux()

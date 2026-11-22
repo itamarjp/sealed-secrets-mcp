@@ -138,6 +138,14 @@ challenge names `scope="seal:existing seal:rotate"`, then reconnect the connecto
 token. Enable it only when **every** OAuth client of this resource holds both grants, otherwise
 Pocket ID refuses that client's sign-in with `invalid_scope`.
 
+OAuth clients never generate new credentials by default. To let them create specific new
+Secrets with `generate_sealed_secret`, set `SEAL_POCKET_ID_GENERATE_TARGETS` to exact
+comma-separated `namespace/name` pairs (no wildcards), for example `default/n8n-runners`. It
+needs `SEAL_AUTH_MODE=hybrid` and rotation configured, because the caller must hold `seal:rotate`.
+Generation still refuses any Secret that already exists, so it cannot replace a live credential,
+and the ServiceAccount needs `get` on each name to confirm it is new. Legacy JWT clients keep
+generating as before.
+
 ChatGPT: see [integration and Pocket ID/OAuth requirements](docs/chatgpt.md). The included `plugin.json` and `mcp.json` declare Pocket ID OAuth for ChatGPT. The optional `SEAL_AUTH_MODE=pocketid` resource-server mode validates audience-bound Pocket ID access tokens and restricts tools; deployment requires Pocket ID API/CIMD configuration and an explicit allowed user subject. Credential rotation requires an additional `seal:rotate` API permission and `SEAL_POCKET_ID_ROTATE_TARGET_NAMES` exact target names; see [ChatGPT rotation procedure](docs/chatgpt.md#explicit-oauth-secret-rotation-opt-in).
 
 ## Development
